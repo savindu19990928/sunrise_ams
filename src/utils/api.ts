@@ -1,4 +1,5 @@
 import type { AuthUser, TokenPair } from '../types';
+import { normalizeRequestBody, normalizeResponse } from './normalize';
 
 const API_BASE_URL = 'https://thiranda-813344430767.asia-southeast1.run.app';
 
@@ -161,7 +162,7 @@ async function request<T>(path: string, options: RequestOptions, retrying = fals
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: options.method ?? 'GET',
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.body === undefined ? undefined : JSON.stringify(normalizeRequestBody(path, options.body)),
       signal: options.signal
     });
   } catch (error) {
@@ -200,7 +201,7 @@ async function request<T>(path: string, options: RequestOptions, retrying = fals
     throw new ApiError(message, response.status, kind, fieldErrors);
   }
 
-  return payload as T;
+  return normalizeResponse(path, payload as T);
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {

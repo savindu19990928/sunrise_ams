@@ -23,16 +23,25 @@ export function depositBalance(lease: Lease | undefined | null): number {
   return Math.max(0, Number(lease.current_deposit_balance ?? lease.remaining_deposit ?? 0));
 }
 
+/** Customer's minimum deposit threshold — deductions stop at or below it. */
+export function depositThreshold(customer: Customer | undefined | null): number {
+  if (!customer) return 0;
+  return Math.max(0, Number(customer.minimum_deposit_threshold ?? 0) || 0);
+}
+
 /**
- * Deduction the next bill will apply: the fixed monthly amount while a
- * deposit balance remains (capped at that balance), otherwise 0 — at which
- * point the tenant pays the full rent.
+ * Deduction the next bill will apply. Prefers the API's live value; otherwise
+ * the monthly amount capped so the balance never drops below the threshold,
+ * and 0 once the balance is at or below it (tenant pays full rent).
  */
-export function nextDeduction(lease: Lease | undefined | null): number {
+export function nextDeduction(lease: Lease | undefined | null, threshold = 0): number {
   if (!lease) return 0;
+  if (lease.current_applicable_deposit_deduction !== undefined && lease.current_applicable_deposit_deduction !== null) {
+    return Math.max(0, Number(lease.current_applicable_deposit_deduction) || 0);
+  }
   const balance = depositBalance(lease);
-  if (balance <= 0) return 0;
-  return Math.min(Number(lease.monthly_deposit_deduction ?? 0), balance);
+  if (balance <= threshold) return 0;
+  return Math.min(Number(lease.monthly_deposit_deduction ?? 0), balance - threshold);
 }
 
 export function billOutstanding(bill: Bill): number {

@@ -15,6 +15,7 @@ import { buildQuery } from '../utils/api';
 import { firstOfCurrentMonth, formatCurrency, formatDate, titleCase, today } from '../utils/format';
 import { customerName } from '../utils/lookup';
 import { type ReportExport, downloadReportCsv, downloadReportPdf } from '../utils/reportPdf';
+import { flattenReportRows } from '../utils/reportFormat';
 
 interface ReportDefinition {
   type: ReportType;
@@ -89,7 +90,7 @@ export function Reports() {
 
   const { data, loading, error, reload } = useResource<unknown>(path);
 
-  const rows = useMemo(() => findRows(data), [data]);
+  const rows = useMemo(() => flattenReportRows(active, findRows(data)), [active, data]);
   const breakdown = useMemo(() => findBreakdown(data), [data]);
   const totals = useMemo(() => findTotals(data), [data]);
   const period = useMemo(() => {

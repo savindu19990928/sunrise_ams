@@ -184,8 +184,8 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
 
             <p className="text-[12px] leading-relaxed text-ink-muted">
               {deduction > 0 ?
-            `${formatCurrency(deduction)} of this month's rent is covered by the deposit. Deductions stop once the deposit balance reaches ${formatCurrency(0)} — from then on the full rent is payable.` :
-            'The deposit balance has been used up, so no deduction applies and the full rent is payable.'}
+            `${formatCurrency(deduction)} of this month's rent is covered by the deposit. Deductions stop once the deposit balance falls to the customer's minimum deposit threshold — from then on the full rent is payable.` :
+            "The deposit balance has reached the customer's minimum deposit threshold, so no deduction applies and the full rent is payable."}
             </p>
           </div>
         </div>

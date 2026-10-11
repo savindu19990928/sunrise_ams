@@ -60,6 +60,73 @@ export function reportCellRaw(key: string, value: unknown): string | number {
   return JSON.stringify(value);
 }
 
+type Row = Record<string, unknown>;
+
+function isPlainObject(value: unknown): value is Row {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function fullName(person: Row): string {
+  return [person.first_name, person.last_name].filter(Boolean).join(' ') || String(person.name ?? '');
+}
+
+/** Customer details come back as { customer: {...}, leases: [...] } — one row per lease. */
+function flattenCustomerDetails(rows: Row[]): Row[] {
+  return rows.flatMap((row) => {
+    const customer = isPlainObject(row.customer) ? row.customer : row;
+    const contacts = Array.isArray(customer.immediate_contacts) ? customer.immediate_contacts as Row[] : [];
+    const base: Row = {
+      customer: fullName(customer),
+      nic_number: customer.nic_number ?? null,
+      phone: customer.phone ?? null,
+      email: customer.email ?? null,
+      address: customer.address ?? null,
+      emergency_contacts: contacts.length ?
+      contacts.
+      map((c) => `${c.name ?? ''}${c.relation ? ` (${c.relation})` : ''}${c.mobile_number ? ` · ${c.mobile_number}` : ''}`).
+      join('; ') :
+      null
+    };
+    const leases = Array.isArray(row.leases) ? row.leases as Row[] : [];
+    if (!leases.length) {
+      return [{ ...base, room: null, deposit_paid: null, current_deposit: null, total_payments: null }];
+    }
+    return leases.map((lease) => ({
+      ...base,
+      room: lease.room ?? null,
+      deposit_paid: lease.deposit_paid ?? null,
+      current_deposit: lease.current_deposit ?? null,
+      total_payments: lease.total_payments ?? null
+    }));
+  });
+}
+
+/** Generic fallback: lift one level of nested objects into prefixed columns. */
+function flattenGeneric(rows: Row[]): Row[] {
+  return rows.map((row) => {
+    const flat: Row = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (isPlainObject(value)) {
+        for (const [subKey, subValue] of Object.entries(value)) {
+          if (isPlainObject(subValue) || Array.isArray(subValue) && subValue.some(isPlainObject)) continue;
+          flat[`${key}_${subKey}`] = subValue;
+        }
+      } else if (Array.isArray(value) && value.some(isPlainObject)) {
+        flat[key] = `${value.length} item${value.length === 1 ? '' : 's'}`;
+      } else {
+        flat[key] = value;
+      }
+    }
+    return flat;
+  });
+}
+
+/** Turns nested report payload rows into flat, table-ready rows. */
+export function flattenReportRows(type: string, rows: Row[]): Row[] {
+  if (type === 'customer-details') return flattenCustomerDetails(rows);
+  return flattenGeneric(rows);
+}
+
 export function reportColumnKeys(rows: Record<string, unknown>[]): string[] {
   const keys: string[] = [];
   for (const row of rows) {

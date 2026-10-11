@@ -6,6 +6,7 @@ import { useCollection } from '../hooks/useResource';
 import { useCrud } from '../hooks/useCrud';
 import { LeaseForm } from '../components/leases/LeaseForm';
 import { TerminateLeaseModal } from '../components/leases/TerminateLeaseModal';
+import { DeductionInfoCard } from '../components/leases/DeductionInfoCard';
 import { ApiErrorState } from '../components/ui/ApiErrorState';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -15,7 +16,14 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Select } from '../components/ui/Field';
 import { SearchInput } from '../components/ui/SearchInput';
 import { formatCurrency, formatDate } from '../utils/format';
-import { depositBalance, leaseCustomerName, leaseRoomNumber, mapById } from '../utils/lookup';
+import {
+  depositBalance,
+  depositThreshold,
+  leaseCustomerName,
+  leaseRoomNumber,
+  mapById,
+  nextDeduction } from
+'../utils/lookup';
 
 export function Leases() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -111,12 +119,11 @@ export function Leases() {
     key: 'deduction',
     header: 'Monthly deduction',
     align: 'right',
-    render: (lease) =>
-    lease.is_active && depositBalance(lease) <= 0 ?
-    <Badge tone="warn">Stopped · full rent</Badge> :
-
-    formatCurrency(lease.monthly_deposit_deduction)
-
+    render: (lease) => {
+      const threshold = depositThreshold(customerMap.get(lease.customer));
+      if (!lease.is_active) return <span className="text-ink-soft">—</span>;
+      return <DeductionInfoCard deduction={nextDeduction(lease, threshold)} threshold={threshold} />;
+    }
   },
   {
     key: 'status',
@@ -127,7 +134,7 @@ export function Leases() {
 
     <Badge>
             Terminated
-            {typeof lease.final_deposit_refund === 'number' ?
+            {lease.final_deposit_refund !== undefined && lease.final_deposit_refund !== null ?
       ` · refunded ${formatCurrency(lease.final_deposit_refund)}` :
       ''}
           </Badge>
@@ -243,6 +250,7 @@ export function Leases() {
       <TerminateLeaseModal
         open={Boolean(terminating)}
         lease={terminating}
+        threshold={depositThreshold(terminating ? customerMap.get(terminating.customer) : undefined)}
         onClose={() => setTerminating(null)}
         onDone={() => {
           reload();

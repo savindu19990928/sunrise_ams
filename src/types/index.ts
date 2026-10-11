@@ -45,6 +45,8 @@ export interface Customer {
   address: string;
   /** Nested by the API on /api/customers/ — optional, may be empty. */
   immediate_contacts?: ImmediateContact[];
+  /** Monthly deposit deductions stop once the deposit balance is at or below this amount. */
+  minimum_deposit_threshold?: number | string;
 }
 
 export interface Lease {
@@ -56,14 +58,18 @@ export interface Lease {
   start_date: string;
   end_date: string | null;
   deposit_paid: number;
-  /** Deposit still held. Deductions stop once this reaches 0. */
+  /** Deposit still held. Deductions stop once this is at or below the customer's threshold. */
   current_deposit_balance: number;
   /** Legacy field name — read through depositBalance() instead. */
   remaining_deposit?: number;
   rent_fee: number;
   monthly_deposit_deduction: number;
+  /** Calculated by the API: what the next bill will deduct (0 once the threshold is reached). */
+  current_applicable_deposit_deduction?: number | string;
+  /** Calculated by the API: rent_fee − current_applicable_deposit_deduction. */
+  effective_rent_fee?: number | string;
   is_active: boolean;
-  final_deposit_refund?: number | null;
+  final_deposit_refund?: number | string | null;
 }
 
 export interface UtilityRecord {
@@ -111,13 +117,35 @@ export interface Payment {
 
 export type PaymentMethod = 'cash' | 'bank_transfer' | 'cheque' | 'card';
 
+export type RepairStatus = 'pending' | 'in_progress' | 'completed';
+
 export interface RoomRepair {
   id: ID;
-  room: ID;
+  /** Repairs are logged against a lease; the room is derived from it. */
+  lease?: ID;
+  room?: ID;
   room_number?: string;
+  customer_name?: string;
   repair_cost: number;
   repair_description: string;
   repair_date: string;
+  status?: RepairStatus;
+  /** Set by the API once the cost has been taken from the tenant's deposit at move-out. */
+  deducted_from_deposit?: boolean;
+}
+
+/** Response of POST /api/leases/{id}/terminate/ and the leave-room actions. */
+export interface LeaveRoomResult {
+  message?: string;
+  lease_id?: ID;
+  room_number?: string;
+  customer_name?: string;
+  deposit_before_repairs?: number | string;
+  total_repairs_deducted?: number | string;
+  final_deposit_refund?: number | string;
+  amount_owed_by_customer?: number | string;
+  current_deposit_balance?: number | string;
+  deducted_repairs?: {id: ID;description: string;cost: number | string;date_logged?: string;status?: string;}[];
 }
 
 export interface OverduePayment {

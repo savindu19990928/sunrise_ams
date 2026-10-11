@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { Customer, Lease, Room } from '../../types';
 import type { ApiError } from '../../utils/api';
 import { formatCurrency, toNumber, today } from '../../utils/format';
-import { customerName } from '../../utils/lookup';
+import { customerName, depositThreshold } from '../../utils/lookup';
 import { Field, Input, Select } from '../ui/Field';
 import { FormModal } from '../ui/FormModal';
 
@@ -87,10 +87,11 @@ export function LeaseForm({
   const set = (key: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
   setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
+  const selectedCustomer = customers.find((item) => String(item.id) === form.customer);
+  const threshold = depositThreshold(selectedCustomer);
+  const deductible = Math.max(0, toNumber(form.deposit_paid) - threshold);
   const monthsCovered =
-  toNumber(form.monthly_deposit_deduction) > 0 ?
-  Math.floor(toNumber(form.deposit_paid) / toNumber(form.monthly_deposit_deduction)) :
-  0;
+  toNumber(form.monthly_deposit_deduction) > 0 ? Math.ceil(deductible / toNumber(form.monthly_deposit_deduction)) : 0;
 
   const handleSubmit = () => {
     setTouched(true);
@@ -116,7 +117,7 @@ export function LeaseForm({
       onClose={onClose}
       onSubmit={handleSubmit}
       title={lease ? `Edit lease #${lease.id}` : 'Assign room to customer'}
-      description="The deposit is collected up front. Each month the tenant pays rent minus the deduction until the deposit balance reaches zero, then the full rent."
+      description="The deposit is collected up front. Each month the tenant pays rent minus the deduction until the deposit falls to the customer's minimum threshold, then the full rent."
       submitLabel={lease ? 'Save changes' : 'Create lease'}
       pending={pending}
       error={error}>
@@ -180,9 +181,16 @@ export function LeaseForm({
           <span className="font-semibold">
             {formatCurrency(Math.max(0, toNumber(form.rent_fee) - toNumber(form.monthly_deposit_deduction)))}
           </span>{' '}
-          rent for about <span className="font-semibold">{monthsCovered} months</span>. Once the deposit is used up the
-          deduction stops and the full rent of <span className="font-semibold">{formatCurrency(form.rent_fee)}</span>{' '}
-          applies.
+          rent for about <span className="font-semibold">{monthsCovered} months</span>. Once the deposit reaches the
+          customer's threshold of <span className="font-semibold">{formatCurrency(threshold)}</span> the deduction stops
+          and the full rent of <span className="font-semibold">{formatCurrency(form.rent_fee)}</span> applies. The
+          threshold amount is kept to cover repairs at move-out.
+        </p>
+      }
+      {form.customer && toNumber(form.deposit_paid) > 0 && deductible <= 0 &&
+      <p className="rounded-lg border border-warn-100 bg-warn-50 px-3 py-2.5 text-[13px] leading-relaxed text-warn-700">
+          The deposit is at or below this customer's minimum threshold of {formatCurrency(threshold)}, so no monthly
+          deduction will be taken — the full rent applies from the first bill.
         </p>
       }
     </FormModal>);

@@ -14,6 +14,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { type Column, DataTable } from '../components/ui/DataTable';
 import { PageHeader } from '../components/ui/PageHeader';
 import { SearchInput } from '../components/ui/SearchInput';
+import { formatCurrency } from '../utils/format';
 
 export function Customers() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -107,6 +108,17 @@ export function Customers() {
           </div>);
 
     }
+  },
+  {
+    key: 'threshold',
+    header: 'Deposit threshold',
+    align: 'right',
+    render: (customer) =>
+    customer.minimum_deposit_threshold === undefined || customer.minimum_deposit_threshold === null ?
+    <Badge tone="warn">Not set</Badge> :
+
+    <span className="whitespace-nowrap text-ink">{formatCurrency(customer.minimum_deposit_threshold)}</span>
+
   },
   {
     key: 'room',
