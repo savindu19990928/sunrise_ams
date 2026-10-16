@@ -6,8 +6,7 @@ import type {
   NotificationsResponse,
   PaymentReminder,
   RepairReminder,
-  ReminderType,
-  UtilityBillReminder } from
+  ReminderType } from
 '../types/notifications';
 import { useBillingData } from '../hooks/useBillingData';
 import { useResource } from '../hooks/useResource';
@@ -22,14 +21,11 @@ import { Card } from '../components/ui/Card';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { LoadingState } from '../components/ui/States';
 import { ApiError, apiRequest } from '../utils/api';
-import { formatMonth } from '../utils/format';
 import { notifyRemindersChanged } from '../utils/reminders';
 
 type Filter = 'all' | ReminderType;
 
-type PendingAction =
-{kind: 'repair';item: RepairReminder;} |
-{kind: 'utility';item: UtilityBillReminder;};
+type PendingAction = {kind: 'repair';item: RepairReminder;};
 
 export function Reminders() {
   const { data, loading, error, reload } = useResource<NotificationsResponse>('/api/notifications/');
@@ -77,13 +73,8 @@ export function Reminders() {
     if (!action) return;
     setActionPending(true);
     try {
-      if (action.kind === 'repair') {
-        await apiRequest(`/api/repairs/${action.item.repair_id}/complete/`, { method: 'POST' });
-        toast.success(`Repair in Room ${action.item.room_number} marked completed`);
-      } else {
-        await apiRequest(`/api/utilities/${action.item.utility_record_id}/mark_paid/`, { method: 'POST' });
-        toast.success(`Room ${action.item.room_number} utility bill marked paid`);
-      }
+      await apiRequest(`/api/repairs/${action.item.repair_id}/complete/`, { method: 'POST' });
+      toast.success(`Repair in Room ${action.item.room_number} marked completed`);
       setAction(null);
       refreshEverything();
     } catch (err) {
@@ -157,11 +148,7 @@ export function Reminders() {
           <RepairReminders items={lists.repairs} onComplete={(item) => setAction({ kind: 'repair', item })} />
           }
               {show('utilities') &&
-          <UtilityReminders
-            bills={lists.utilityBills}
-            missing={lists.missing}
-            onMarkPaid={(item) => setAction({ kind: 'utility', item })} />
-
+          <UtilityReminders bills={lists.utilityBills} missing={lists.missing} />
           }
             </div>
         }
@@ -184,15 +171,11 @@ export function Reminders() {
 
       <ConfirmDialog
         open={Boolean(action)}
-        title={action?.kind === 'repair' ? 'Mark repair completed?' : 'Mark utility bill paid?'}
+        title="Mark repair completed?"
         message={
-        action?.kind === 'repair' ?
-        `"${action.item.description}" in Room ${action.item.room_number} will be marked completed with today's date.` :
-        action ?
-        `Room ${action.item.room_number}'s ${formatMonth(action.item.billing_month)} utility bill will be marked as paid to the provider.` :
-        ''
+        action ? `"${action.item.description}" in Room ${action.item.room_number} will be marked completed with today's date.` : ''
         }
-        confirmLabel={action?.kind === 'repair' ? 'Mark completed' : 'Mark paid'}
+        confirmLabel="Mark completed"
         pending={actionPending}
         onConfirm={confirmAction}
         onClose={() => {

@@ -51,10 +51,7 @@ function normalizeRecord(resource: string, record: Json): Json {
       out.customer_name ??= `${customer.first_name ?? ''} ${customer.last_name ?? ''}`.trim();
     }
     if (isPlainObject(out.room)) out.room_number ??= out.room.room_number;
-    if (out.amount_paid === undefined && typeof out.is_paid === 'boolean') {
-      out.amount_paid = out.is_paid ? out.total_due ?? 0 : 0;
-    }
-    if (out.status === undefined && out.is_paid === true) out.status = 'paid';
+    // Rent collected is summed from lease payments in useBillingData; utilities never count.
   }
 
   return out;

@@ -1,9 +1,12 @@
 export type ID = number;
 
+/** The API restricts rooms to these three categories. */
+export type RoomType = 'single' | 'double' | 'annex';
+
 export interface Room {
   id: ID;
   room_number: string;
-  room_type: string;
+  room_type: RoomType | string;
   base_rent_fee: number;
   base_deposit: number;
   monthly_deposit_deduction: number;
@@ -55,8 +58,16 @@ export interface Lease {
   room: ID;
   customer_name?: string;
   room_number?: string;
+  room_type?: string;
   start_date: string;
   end_date: string | null;
+  /** Baseline agreement values recorded on the lease itself. */
+  base_rent_fee?: number | string;
+  base_deposit?: number | string;
+  /** Deductions stop once the deposit balance is at or below this amount. */
+  minimum_deposit_threshold?: number | string;
+  /** Sum of all rent payments collected for this lease (excludes utility payments). */
+  total_payments_received?: number | string;
   deposit_paid: number;
   /** Deposit still held. Deductions stop once this is at or below the customer's threshold. */
   current_deposit_balance: number;
@@ -76,12 +87,94 @@ export interface UtilityRecord {
   id: ID;
   room: ID;
   room_number?: string;
+  room_type?: string;
   billing_month: string;
-  electricity_units?: number;
-  water_units?: number;
-  /** Calculated by the API from units × the room's unit price. */
-  electricity_cost: number;
-  water_cost: number;
+  electricity_units?: number | string;
+  water_units?: number | string;
+  /** Month-specific rate. Optional — the API falls back to the room's default rate. */
+  electricity_unit_price?: number | string | null;
+  water_unit_price?: number | string | null;
+  /** Calculated by the API from units × unit price. */
+  electricity_cost: number | string;
+  water_cost: number | string;
+  total_cost?: number | string;
+  /** Settled with the utility supplier (paid by the tenant directly). */
+  is_paid?: boolean;
+  total_utility_paid?: number | string;
+  remaining_balance?: number | string;
+  /** Room's advance credit from earlier supplier overpayments. */
+  room_credit_balance?: number | string;
+  customer_name?: string | null;
+  due_date?: string | null;
+}
+
+/** Building-level bill received from the utility supplier for one month. */
+export interface BuildingUtilityBill {
+  id: ID;
+  billing_month: string;
+  total_electricity_bill: number | string;
+  total_water_bill: number | string;
+  /** Sum of the room meters. */
+  total_electricity_units: number | string;
+  total_water_units: number | string;
+  /** Building usage as stated on the supplier's bill. */
+  supplier_electricity_units?: number | string | null;
+  supplier_water_units?: number | string | null;
+  electricity_unit_price: number | string;
+  water_unit_price: number | string;
+  due_date?: string | null;
+}
+
+/** One room's row in GET /api/utilities/monthly-summary/. */
+export interface MonthlyUtilityRow {
+  utility_record_id: ID;
+  room_id: ID;
+  room_number: string;
+  room_type?: string;
+  customer_name?: string | null;
+  electricity_units: number | string;
+  electricity_unit_price: number | string;
+  electricity_cost: number | string;
+  water_units: number | string;
+  water_unit_price: number | string;
+  water_cost: number | string;
+  total_bill?: number | string;
+  total_cost: number | string;
+  total_utility_paid?: number | string;
+  remaining_balance?: number | string;
+  room_credit_balance?: number | string;
+  is_paid: boolean;
+  due_date?: string | null;
+}
+
+export interface MonthlyUtilitySummary {
+  billing_month: string;
+  building_utility_bill: BuildingUtilityBill | null;
+  rooms_count?: number;
+  total_rooms_utility_cost?: number | string;
+  rooms_utility_data: MonthlyUtilityRow[];
+}
+
+export interface RoomUtilityHistory {
+  room_id: ID;
+  room_number: string;
+  room_type?: string;
+  records_count?: number;
+  utility_records: UtilityRecord[];
+}
+
+/** Payment made by the tenant directly to the utility supplier — never business income. */
+export interface UtilityPayment {
+  id: ID;
+  utility_record: ID;
+  room_number?: string;
+  billing_month?: string;
+  amount_paid: number | string;
+  payment_date: string;
+  paid_to_supplier?: boolean;
+  receipt_reference?: string;
+  notes?: string;
+  created_at?: string;
 }
 
 export type BillStatus = 'unpaid' | 'partial' | 'paid';
@@ -98,15 +191,22 @@ export interface Bill {
   water: number;
   deposit_deduction: number;
   remaining_deposit: number;
+  /** Rent less deposit deduction — the only amount the tenant pays the business. */
+  net_rent?: number | string;
+  /** API total including utilities. Utilities are paid to the supplier, so use billRentDue(). */
   total_due: number;
+  /** Rent collected — summed from lease payments. */
   amount_paid: number;
+  is_paid?: boolean;
   /** Optional — derive it with billStatus() instead of reading it directly. */
   status?: BillStatus;
 }
 
+/** Lease rent payment. Never used for utilities. */
 export interface Payment {
   id: ID;
   bill: ID;
+  lease?: ID;
   customer_name?: string;
   room_number?: string;
   amount: number;
@@ -184,7 +284,8 @@ export type ReportType =
 'all-payments' |
 'this-month-charges' |
 'room-repairs' |
-'profits';
+'profits' |
+'utility-payments';
 
 export interface ReportPeriod {
   start: string;

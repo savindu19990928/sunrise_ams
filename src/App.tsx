@@ -16,6 +16,7 @@ import { Reports } from './pages/Reports';
 import { Rooms } from './pages/Rooms';
 import { Staff } from './pages/Staff';
 import { Utilities } from './pages/Utilities';
+import { UtilityPayments } from './pages/UtilityPayments';
 
 function RequireAuth({ children }: {children: React.ReactNode;}) {
   const { user, ready } = useAuth();
@@ -56,6 +57,7 @@ export function App() {
             <Route path="/customers" element={<Customers />} />
             <Route path="/leases" element={<Leases />} />
             <Route path="/utilities" element={<Utilities />} />
+            <Route path="/utility-payments" element={<UtilityPayments />} />
             <Route path="/bills" element={<Bills />} />
             <Route path="/payments" element={<Payments />} />
             <Route path="/overdue" element={<Overdue />} />

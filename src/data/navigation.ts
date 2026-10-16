@@ -7,6 +7,7 @@ import {
   FileTextIcon,
   GaugeIcon,
   LayoutDashboardIcon,
+  PlugZapIcon,
   ReceiptTextIcon,
   ShieldCheckIcon,
   TimerOffIcon,
@@ -46,8 +47,9 @@ export const navSections: NavSection[] = [
   label: 'Billing',
   items: [
   { label: 'Utilities', to: '/utilities', icon: GaugeIcon },
+  { label: 'Supplier payments', to: '/utility-payments', icon: PlugZapIcon },
   { label: 'Bills', to: '/bills', icon: ReceiptTextIcon },
-  { label: 'Payments', to: '/payments', icon: BanknoteIcon },
+  { label: 'Rent payments', to: '/payments', icon: BanknoteIcon },
   { label: 'Overdue', to: '/overdue', icon: TimerOffIcon }]
 
 },

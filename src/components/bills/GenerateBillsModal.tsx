@@ -62,7 +62,7 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
       onClose={onClose}
       title={result ? 'Bills generated' : 'Generate monthly bills'}
       description={
-      result ? undefined : 'One bill per active lease: (rent − deposit deduction) + electricity + water. Leases whose deposit is at or below the customer\u2019s minimum threshold are billed the full rent.'
+      result ? undefined : 'One bill per active lease. Rent payable is rent less the deposit deduction (full rent once the deposit reaches the lease\u2019s minimum threshold). Electricity and water are shown for reference — tenants pay those to the supplier.'
       }
       size="md"
       footer={

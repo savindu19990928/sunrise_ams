@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import type { Room, RoomStatus } from '../../types';
+import { roomTypes } from '../../data/roomTypes';
+import type { Room, RoomStatus, RoomType } from '../../types';
 import { toNumber } from '../../utils/format';
 import type { ApiError } from '../../utils/api';
 import { Field, Input, Select, Textarea } from '../ui/Field';
@@ -16,12 +17,16 @@ interface RoomFormProps {
   onSubmit: (payload: Record<string, unknown>, applyToActiveLease: boolean) => void;
 }
 
-const roomTypes = ['Single', 'Double', 'Studio', 'Deluxe', 'Shared'];
+function normalizeRoomType(value: string | undefined): RoomType {
+  const lower = String(value ?? '').toLowerCase();
+  return roomTypes.some((type) => type.value === lower) ? lower as RoomType : 'single';
+}
+
 const statuses: RoomStatus[] = ['vacant', 'occupied', 'maintenance'];
 
 interface FormState {
   room_number: string;
-  room_type: string;
+  room_type: RoomType;
   base_rent_fee: string;
   base_deposit: string;
   monthly_deposit_deduction: string;
@@ -33,7 +38,7 @@ interface FormState {
 
 const emptyState: FormState = {
   room_number: '',
-  room_type: 'Single',
+  room_type: 'single',
   base_rent_fee: '',
   base_deposit: '',
   monthly_deposit_deduction: '',
@@ -56,7 +61,7 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
       room ?
       {
         room_number: room.room_number ?? '',
-        room_type: room.room_type ?? 'Single',
+        room_type: normalizeRoomType(room.room_type),
         base_rent_fee: String(room.base_rent_fee ?? ''),
         base_deposit: String(room.base_deposit ?? ''),
         monthly_deposit_deduction: String(room.monthly_deposit_deduction ?? ''),
@@ -85,8 +90,8 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
         base_rent_fee: toNumber(form.base_rent_fee),
         base_deposit: toNumber(form.base_deposit),
         monthly_deposit_deduction: toNumber(form.monthly_deposit_deduction),
-        electricity_unit_price: toNumber(form.electricity_unit_price),
-        water_unit_price: toNumber(form.water_unit_price),
+        electricity_unit_price: form.electricity_unit_price === '' ? null : toNumber(form.electricity_unit_price),
+        water_unit_price: form.water_unit_price === '' ? null : toNumber(form.water_unit_price),
         status: form.status,
         notes: form.notes.trim()
       },
@@ -100,7 +105,7 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
       onClose={onClose}
       onSubmit={handleSubmit}
       title={room ? `Edit room ${room.room_number}` : 'Add room'}
-      description="Rent, deposit, the monthly deposit deduction and this room's utility rates are used when generating bills."
+      description="Base rent, base deposit and the monthly deduction are copied onto each new lease for this room."
       submitLabel={room ? 'Save changes' : 'Create room'}
       pending={pending}
       error={error}>
@@ -112,8 +117,8 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
         <Field label="Room type" htmlFor="room_type">
           <Select id="room_type" value={form.room_type} onChange={set('room_type')}>
             {roomTypes.map((type) =>
-            <option key={type} value={type}>
-                {type}
+            <option key={type.value} value={type.value}>
+                {type.label}
               </option>
             )}
           </Select>
@@ -139,7 +144,11 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
             placeholder="1500" />
           
         </Field>
-        <Field label="Electricity price per unit" htmlFor="electricity_unit_price" hint="Used to cost this room's meter readings.">
+        <Field
+          label="Default electricity rate"
+          htmlFor="electricity_unit_price"
+          hint="Optional fallback. Monthly rates come from the building bill.">
+          
           <Input
             id="electricity_unit_price"
             type="number"
@@ -150,7 +159,7 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
             placeholder="55" />
           
         </Field>
-        <Field label="Water price per unit" htmlFor="water_unit_price">
+        <Field label="Default water rate" htmlFor="water_unit_price" hint="Optional fallback.">
           <Input
             id="water_unit_price"
             type="number"

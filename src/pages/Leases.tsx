@@ -15,12 +15,12 @@ import { type Column, DataTable } from '../components/ui/DataTable';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Select } from '../components/ui/Field';
 import { SearchInput } from '../components/ui/SearchInput';
-import { formatCurrency, formatDate } from '../utils/format';
+import { formatCurrency, formatDate, toNumber } from '../utils/format';
 import {
   depositBalance,
-  depositThreshold,
   leaseCustomerName,
   leaseRoomNumber,
+  leaseThreshold,
   mapById,
   nextDeduction } from
 '../utils/lookup';
@@ -103,7 +103,30 @@ export function Leases() {
         </span>
 
   },
-  { key: 'rent', header: 'Rent', align: 'right', render: (lease) => formatCurrency(lease.rent_fee) },
+  {
+    key: 'rent',
+    header: 'Rent',
+    align: 'right',
+    render: (lease) =>
+    <span className="whitespace-nowrap">
+          <span className="text-ink">{formatCurrency(lease.rent_fee)}</span>
+          {lease.base_rent_fee !== undefined && toNumber(lease.base_rent_fee) !== toNumber(lease.rent_fee) &&
+      <span className="block text-[12px] text-ink-soft">base {formatCurrency(lease.base_rent_fee)}</span>
+      }
+        </span>
+
+  },
+  {
+    key: 'received',
+    header: 'Rent received',
+    align: 'right',
+    render: (lease) =>
+    lease.total_payments_received === undefined ?
+    <span className="text-ink-soft">—</span> :
+
+    <span className="whitespace-nowrap text-ink">{formatCurrency(lease.total_payments_received)}</span>
+
+  },
   {
     key: 'deposit',
     header: 'Deposit left',
@@ -120,7 +143,7 @@ export function Leases() {
     header: 'Monthly deduction',
     align: 'right',
     render: (lease) => {
-      const threshold = depositThreshold(customerMap.get(lease.customer));
+      const threshold = leaseThreshold(lease, customerMap.get(lease.customer));
       if (!lease.is_active) return <span className="text-ink-soft">—</span>;
       return <DeductionInfoCard deduction={nextDeduction(lease, threshold)} threshold={threshold} />;
     }
@@ -250,7 +273,7 @@ export function Leases() {
       <TerminateLeaseModal
         open={Boolean(terminating)}
         lease={terminating}
-        threshold={depositThreshold(terminating ? customerMap.get(terminating.customer) : undefined)}
+        threshold={leaseThreshold(terminating, terminating ? customerMap.get(terminating.customer) : undefined)}
         onClose={() => setTerminating(null)}
         onDone={() => {
           reload();

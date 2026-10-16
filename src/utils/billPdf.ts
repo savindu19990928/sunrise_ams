@@ -1,7 +1,8 @@
 import type { jsPDF } from 'jspdf';
 import type { Bill, Customer, ID, Lease, Room, UtilityRecord } from '../types';
 import { formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from './format';
-import { billOutstanding, billStatus, customerName } from './lookup';
+import { billOutstanding, billRentDue, billStatus, billUtilities, customerName } from './lookup';
+import { formatPerDay, formatUnits } from './utilityUsage';
 import {
   addPage,
   BILL_THEME,
@@ -30,6 +31,12 @@ export interface UtilityHistoryRow {
   monthKey: string;
   electricity: number | null;
   water: number | null;
+  /** Meter usage for the month — null when no utility record exists. */
+  electricityUnits: number | null;
+  waterUnits: number | null;
+  /** Month-specific per-unit price applied to this room. */
+  electricityRate: number | null;
+  waterRate: number | null;
   isCurrent: boolean;
 }
 
@@ -64,21 +71,26 @@ export function buildBillBundle(bill: Bill, sources: BillPdfSources): BillPdfBun
 
   const history: UtilityHistoryRow[] = [0, -1, -2].map((offset) => {
     const monthKey = shiftMonth(currentMonth, offset);
-    if (offset === 0) {
-      return {
-        monthKey,
-        electricity: toNumber(bill.electricity),
-        water: toNumber(bill.water),
-        isCurrent: true
-      };
-    }
     const record = sources.utilities.find(
       (item) => (lease ? item.room === lease.room : false) && monthInputValue(item.billing_month) === monthKey
     );
+    const usage = {
+      electricityUnits: record?.electricity_units !== undefined ? toNumber(record.electricity_units) : null,
+      waterUnits: record?.water_units !== undefined ? toNumber(record.water_units) : null,
+      electricityRate:
+      record?.electricity_unit_price !== undefined && record.electricity_unit_price !== null ?
+      toNumber(record.electricity_unit_price) :
+      null,
+      waterRate: record?.water_unit_price !== undefined && record.water_unit_price !== null ? toNumber(record.water_unit_price) : null
+    };
+    if (offset === 0) {
+      return { monthKey, electricity: toNumber(bill.electricity), water: toNumber(bill.water), ...usage, isCurrent: true };
+    }
     return {
       monthKey,
       electricity: record ? toNumber(record.electricity_cost) : null,
       water: record ? toNumber(record.water_cost) : null,
+      ...usage,
       isCurrent: false
     };
   });
@@ -103,8 +115,15 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
   const remainingDeposit = toNumber(bill.remaining_deposit);
   const depositPaid = lease ? toNumber(lease.deposit_paid) : null;
   const primaryContact = customer?.immediate_contacts?.[0];
-  const electricityRate = toNumber(room?.electricity_unit_price);
-  const waterRate = toNumber(room?.water_unit_price);
+  const current = history.find((row) => row.isCurrent);
+  const electricityRate = current?.electricityRate ?? toNumber(room?.electricity_unit_price);
+  const waterRate = current?.waterRate ?? toNumber(room?.water_unit_price);
+  const usageLabel = (units: number | null | undefined, rate: number) =>
+  units === null || units === undefined ?
+  rate ?
+  ` — ${formatCurrency(rate)} / unit` :
+  '' :
+  ` — ${formatUnits(units)} units (${formatPerDay(units, bill.billing_month)}) × ${formatCurrency(rate)}`;
 
   let y = drawBrandHeader(doc, {
     documentTitle: 'Monthly bill',
@@ -132,7 +151,7 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
   );
 
   y += 10;
-  y = drawSectionTitle(doc, y, 'Charges for this month');
+  y = drawSectionTitle(doc, y, 'Rent for this month', 'Payable to Sunrise Apartments');
   y = drawTable(doc, {
     startY: y + 4,
     head: ['Description', 'Amount'],
@@ -140,15 +159,7 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
     [`Room rent — Room ${roomNumber}`, formatCurrency(bill.rent)],
     depositDeduction > 0 ?
     ['Less: monthly deposit deduction', `- ${formatCurrency(depositDeduction)}`] :
-    ['Deposit deduction — stopped, deposit used up', formatCurrency(0)],
-    [
-    electricityRate ? `Electricity — room rate ${formatCurrency(electricityRate)} / unit` : 'Electricity — room meter',
-    formatCurrency(bill.electricity)],
-
-    [
-    waterRate ? `Water — room rate ${formatCurrency(waterRate)} / unit` : 'Water — room meter',
-    formatCurrency(bill.water)]],
-
+    ['Deposit deduction — stopped, minimum deposit reached', formatCurrency(0)]],
 
     rightAlign: [1],
     columnWidths: { 1: 130 }
@@ -157,17 +168,32 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
   y = drawTotalBand(
     doc,
     y + 12,
-    'Total payable this month',
-    formatCurrency(bill.total_due),
-    depositDeduction > 0 ? 'Rent less deposit deduction, plus electricity and water' : 'Full rent plus electricity and water'
+    'Rent payable this month',
+    formatCurrency(billRentDue(bill)),
+    depositDeduction > 0 ? 'Rent less deposit deduction' : 'Full rent'
   );
 
   y = drawTable(doc, {
     startY: y + 12,
-    head: ['Payment position', 'Amount'],
+    head: ['Rent payment position', 'Amount'],
     body: [
-    ['Paid so far', formatCurrency(bill.amount_paid)],
-    [outstanding > 0 ? 'Still outstanding' : 'Settled in full', formatCurrency(outstanding)]],
+    ['Rent paid so far', formatCurrency(bill.amount_paid)],
+    [outstanding > 0 ? 'Rent still outstanding' : 'Rent settled in full', formatCurrency(outstanding)]],
+
+    rightAlign: [1],
+    columnWidths: { 1: 130 },
+    emphasiseLastRow: true,
+    fontSize: 8.6
+  });
+
+  y = drawSectionTitle(doc, y + 22, 'Utilities for this month', 'Pay directly to the supplier — not included in rent payable');
+  y = drawTable(doc, {
+    startY: y + 4,
+    head: ['Utility', 'Amount'],
+    body: [
+    [`Electricity${usageLabel(current?.electricityUnits, electricityRate)}`, formatCurrency(bill.electricity)],
+    [`Water${usageLabel(current?.waterUnits, waterRate)}`, formatCurrency(bill.water)],
+    ['Utilities total — pay to supplier', formatCurrency(billUtilities(bill))]],
 
     rightAlign: [1],
     columnWidths: { 1: 130 },
@@ -190,26 +216,31 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
     fontSize: 8.6
   });
 
-  y = drawSectionTitle(doc, y + 22, 'Utility history', 'This month and the previous two');
+  y = drawSectionTitle(doc, y + 22, 'Utility history', 'Usage with average per day — this month and the previous two');
   y = drawTable(doc, {
     startY: y + 4,
-    head: ['Month', 'Electricity', 'Water', 'Utilities total'],
-    body: history.map((row) => [
-    row.isCurrent ? `${monthLabel(row.monthKey)} (this bill)` : monthLabel(row.monthKey),
-    row.electricity === null ? 'Not recorded' : formatCurrency(row.electricity),
-    row.water === null ? 'Not recorded' : formatCurrency(row.water),
-    row.electricity === null && row.water === null ?
-    '—' :
-    formatCurrency(toNumber(row.electricity) + toNumber(row.water))]
-    ),
-    rightAlign: [1, 2, 3],
-    fontSize: 8.6
+    head: ['Month', 'Elec. units', 'Avg / day', 'Electricity', 'Water units', 'Avg / day', 'Water', 'Total'],
+    body: history.map((row) => {
+      const monthValue = `${row.monthKey}-01`;
+      return [
+      row.isCurrent ? `${monthLabel(row.monthKey)} (this bill)` : monthLabel(row.monthKey),
+      row.electricityUnits === null ? '—' : formatUnits(row.electricityUnits),
+      row.electricityUnits === null ? '—' : formatPerDay(row.electricityUnits, monthValue),
+      row.electricity === null ? 'Not recorded' : formatCurrency(row.electricity),
+      row.waterUnits === null ? '—' : formatUnits(row.waterUnits),
+      row.waterUnits === null ? '—' : formatPerDay(row.waterUnits, monthValue),
+      row.water === null ? 'Not recorded' : formatCurrency(row.water),
+      row.electricity === null && row.water === null ? '—' : formatCurrency(toNumber(row.electricity) + toNumber(row.water))];
+
+    }),
+    rightAlign: [1, 2, 3, 4, 5, 6, 7],
+    fontSize: 7.8
   });
 
   drawParagraph(
     doc,
     y + 20,
-    `Electricity and water are charged on this room\u2019s own meter units at this room\u2019s unit prices. ${
+    `Electricity and water are charged on this room\u2019s own meter units at this month\u2019s per-unit price (the building bill divided by all rooms\u2019 usage, unless adjusted for this room). Utility bills are paid directly to the supplier. ${
     depositDeduction > 0 ?
     `${formatCurrency(depositDeduction)} of the rent is covered by the deposit this month; deductions stop once the deposit balance reaches zero, after which the full rent is payable.` :
     'The deposit balance has been used up, so no deduction applies and the full rent is payable.'} Any deposit remaining when the room is vacated is refunded after deducting repair costs.`

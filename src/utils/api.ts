@@ -1,7 +1,7 @@
 import type { AuthUser, TokenPair } from '../types';
 import { normalizeRequestBody, normalizeResponse } from './normalize';
 
-const API_BASE_URL = 'https://thiranda-813344430767.asia-southeast1.run.app';
+const API_BASE_URL = 'https://thiranda.devrious.lk';
 
 export type ApiErrorKind = 'network' | 'auth' | 'validation' | 'http';
 
@@ -37,11 +37,12 @@ function read(key: string): string | null {
 
 function write(key: string, value: string | null): void {
   try {
-    if (value === null) window.localStorage.removeItem(key);else
-    window.localStorage.setItem(key, value);
+    if (value === null) window.localStorage.removeItem(key); else
+      window.localStorage.setItem(key, value);
   } catch {
 
-    /* storage unavailable — session-only */}
+    /* storage unavailable — session-only */
+  }
 }
 
 export function getAccessToken(): string | null {
@@ -82,9 +83,9 @@ export function decodeJwt(token: string): Record<string, unknown> | null {
     const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
     const json = decodeURIComponent(
       atob(normalized).
-      split('').
-      map((c) => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`).
-      join('')
+        split('').
+        map((c) => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`).
+        join('')
     );
     return JSON.parse(json) as Record<string, unknown>;
   } catch {
@@ -95,13 +96,13 @@ export function decodeJwt(token: string): Record<string, unknown> | null {
 export function userFromToken(token: string, fallbackUsername: string): AuthUser {
   const payload = decodeJwt(token) ?? {};
   const username =
-  typeof payload.username === 'string' && payload.username ||
-  typeof payload.user === 'string' && payload.user ||
-  fallbackUsername;
+    typeof payload.username === 'string' && payload.username ||
+    typeof payload.user === 'string' && payload.user ||
+    fallbackUsername;
   const isSuperuser =
-  payload.is_superuser === true ||
-  payload.is_superuser === undefined && payload.is_staff === true ||
-  payload.is_superuser === undefined && payload.is_staff === undefined && username.toLowerCase() === 'admin';
+    payload.is_superuser === true ||
+    payload.is_superuser === undefined && payload.is_staff === true ||
+    payload.is_superuser === undefined && payload.is_staff === undefined && username.toLowerCase() === 'admin';
   return { username, is_superuser: isSuperuser };
 }
 
@@ -114,7 +115,7 @@ interface RequestOptions {
   signal?: AbortSignal;
 }
 
-function buildErrorMessage(status: number, payload: unknown): {message: string;fieldErrors?: Record<string, string[]>;} {
+function buildErrorMessage(status: number, payload: unknown): { message: string; fieldErrors?: Record<string, string[]>; } {
   if (payload && typeof payload === 'object') {
     const record = payload as Record<string, unknown>;
     const direct = record.detail ?? record.message ?? record.error;
@@ -142,7 +143,7 @@ async function refreshAccessToken(): Promise<boolean> {
       body: JSON.stringify({ refresh })
     });
     if (!response.ok) return false;
-    const data = (await response.json()) as {access?: string;};
+    const data = (await response.json()) as { access?: string; };
     if (!data.access) return false;
     setTokens({ access: data.access });
     return true;
@@ -197,7 +198,7 @@ async function request<T>(path: string, options: RequestOptions, retrying = fals
   if (!response.ok) {
     const { message, fieldErrors } = buildErrorMessage(response.status, payload);
     const kind: ApiErrorKind =
-    response.status === 401 || response.status === 403 ? 'auth' : response.status === 400 ? 'validation' : 'http';
+      response.status === 401 || response.status === 403 ? 'auth' : response.status === 400 ? 'validation' : 'http';
     throw new ApiError(message, response.status, kind, fieldErrors);
   }
 
@@ -212,8 +213,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 export async function apiList<T>(path: string, options: RequestOptions = {}): Promise<T[]> {
   const data = await apiRequest<unknown>(path, options);
   if (Array.isArray(data)) return data as T[];
-  if (data && typeof data === 'object' && Array.isArray((data as {results?: unknown;}).results)) {
-    return (data as {results: T[];}).results;
+  if (data && typeof data === 'object' && Array.isArray((data as { results?: unknown; }).results)) {
+    return (data as { results: T[]; }).results;
   }
   return [];
 }

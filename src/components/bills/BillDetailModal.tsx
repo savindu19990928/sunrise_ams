@@ -10,8 +10,9 @@ import {
   printBillPdf } from
 '../../utils/billPdf';
 import { formatCurrency, formatDate, formatMonth, titleCase, toNumber } from '../../utils/format';
-import { billOutstanding, billStatus } from '../../utils/lookup';
+import { billOutstanding, billRentDue, billStatus, billUtilities } from '../../utils/lookup';
 import { BRAND_NAME, BRAND_TAGLINE } from '../../utils/pdf';
+import { formatPerDay, formatUnits } from '../../utils/utilityUsage';
 import { Badge, type BadgeTone } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
@@ -29,6 +30,25 @@ interface BillDetailModalProps {
   onRecordPayment: (bill: Bill) => void;
 }
 
+function usageText(units: number | null | undefined, month: string): string {
+  if (units === null || units === undefined) return '';
+  return ` · ${formatUnits(units)} units · ${formatPerDay(units, month)}`;
+}
+
+function HistoryCell({ cost, units, month }: {cost: number | null;units: number | null;month: string;}) {
+  if (cost === null) return <span className="text-ink-muted">Not recorded</span>;
+  return (
+    <>
+      <span className="block text-ink">{formatCurrency(cost)}</span>
+      {units !== null &&
+      <span className="block whitespace-nowrap text-[11px] text-ink-muted">
+          {formatUnits(units)} units · {formatPerDay(units, month)}
+        </span>
+      }
+    </>);
+
+}
+
 function Line({ label, value, muted = false }: {label: string;value: string;muted?: boolean;}) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
@@ -42,6 +62,7 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
   const outstanding = bill ? billOutstanding(bill) : 0;
   const deduction = bill ? toNumber(bill.deposit_deduction) : 0;
   const bundle = useMemo(() => bill ? buildBillBundle(bill, sources) : null, [bill, sources]);
+  const current = bundle?.history.find((row) => row.isCurrent);
 
   const handleDownload = () => {
     if (!bundle) return;
@@ -77,7 +98,7 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
           </Button>
           {bill && outstanding > 0 &&
         <Button icon={BanknoteIcon} onClick={() => onRecordPayment(bill)}>
-              Record payment
+              Record rent payment
             </Button>
         }
         </>
@@ -116,15 +137,13 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
                 {deduction > 0 ?
               <Line label="Less deposit deduction" value={`− ${formatCurrency(deduction)}`} /> :
 
-              <Line label="Deposit deduction — deposit used up" value="None" muted />
+              <Line label="Deposit deduction — minimum deposit reached" value="None" muted />
               }
-                <Line label="Electricity (room rate)" value={formatCurrency(bill.electricity)} />
-                <Line label="Water (room rate)" value={formatCurrency(bill.water)} />
               </dl>
               <div className="flex items-baseline justify-between gap-4 border-t border-bill-line bg-bill-tint px-4 py-3">
-                <p className="text-sm font-medium text-ink">Total amount due</p>
+                <p className="text-sm font-medium text-ink">Rent payable</p>
                 <p className="text-[22px] font-semibold tracking-[-0.02em] text-bill-accent">
-                  {formatCurrency(bill.total_due)}
+                  {formatCurrency(billRentDue(bill))}
                 </p>
               </div>
             </div>
@@ -132,12 +151,27 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
             <div className="rounded-xl border border-bill-line bg-white/60 px-4">
               <dl className="divide-y divide-bill-line">
                 <Line label="Deposit balance after this bill" value={formatCurrency(bill.remaining_deposit)} />
-                <Line label="Paid so far" value={formatCurrency(bill.amount_paid)} />
+                <Line label="Rent paid so far" value={formatCurrency(bill.amount_paid)} />
                 <div className="flex items-baseline justify-between gap-4 py-2.5">
-                  <dt className="text-sm font-medium text-ink">Outstanding</dt>
+                  <dt className="text-sm font-medium text-ink">Rent outstanding</dt>
                   <dd className={`text-sm font-semibold ${outstanding > 0 ? 'text-danger-600' : 'text-success-600'}`}>
                     {formatCurrency(outstanding)}
                   </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div>
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-[13px] font-medium text-ink">Utilities this month</h3>
+                <p className="text-[12px] text-ink-muted">Paid directly to the supplier</p>
+              </div>
+              <dl className="mt-1 divide-y divide-bill-line rounded-xl border border-bill-line bg-white/60 px-4">
+                <Line label={`Electricity${usageText(current?.electricityUnits, bill.billing_month)}`} value={formatCurrency(bill.electricity)} />
+                <Line label={`Water${usageText(current?.waterUnits, bill.billing_month)}`} value={formatCurrency(bill.water)} />
+                <div className="flex items-baseline justify-between gap-4 py-2.5">
+                  <dt className="text-sm font-medium text-ink">Pay to supplier</dt>
+                  <dd className="text-sm font-semibold text-ink">{formatCurrency(billUtilities(bill))}</dd>
                 </div>
               </dl>
             </div>
@@ -169,11 +203,11 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
                           {formatMonth(`${row.monthKey}-01`)}
                           {row.isCurrent && <span className="ml-1.5 text-[11px] text-ink-muted">this bill</span>}
                         </td>
-                        <td className="py-1.5 text-right text-ink">
-                          {row.electricity === null ? <span className="text-ink-muted">Not recorded</span> : formatCurrency(row.electricity)}
+                        <td className="py-1.5 text-right align-top">
+                          <HistoryCell cost={row.electricity} units={row.electricityUnits} month={`${row.monthKey}-01`} />
                         </td>
-                        <td className="py-1.5 text-right text-ink">
-                          {row.water === null ? <span className="text-ink-muted">Not recorded</span> : formatCurrency(row.water)}
+                        <td className="py-1.5 text-right align-top">
+                          <HistoryCell cost={row.water} units={row.waterUnits} month={`${row.monthKey}-01`} />
                         </td>
                       </tr>
                 )}
@@ -184,8 +218,8 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
 
             <p className="text-[12px] leading-relaxed text-ink-muted">
               {deduction > 0 ?
-            `${formatCurrency(deduction)} of this month's rent is covered by the deposit. Deductions stop once the deposit balance falls to the customer's minimum deposit threshold — from then on the full rent is payable.` :
-            "The deposit balance has reached the customer's minimum deposit threshold, so no deduction applies and the full rent is payable."}
+            `${formatCurrency(deduction)} of this month's rent is covered by the deposit. Deductions stop once the deposit balance falls to the lease's minimum deposit threshold — from then on the full rent is payable.` :
+            "The deposit balance has reached the lease's minimum deposit threshold, so no deduction applies and the full rent is payable."}
             </p>
           </div>
         </div>

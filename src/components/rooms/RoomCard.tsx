@@ -24,7 +24,7 @@ export function RoomCard({ room, onEdit, onDelete }: RoomCardProps) {
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-[0.08em] text-ink-soft">Room</p>
           <p className="text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink">{room.room_number}</p>
-          <p className="mt-0.5 text-[13px] text-ink-muted">{room.room_type || 'Unspecified type'}</p>
+          <p className="mt-0.5 text-[13px] text-ink-muted">{room.room_type ? titleCase(String(room.room_type)) : 'Unspecified type'}</p>
         </div>
         <Badge tone={statusTone[room.status ?? 'vacant'] ?? 'neutral'}>{titleCase(room.status ?? 'vacant')}</Badge>
       </div>

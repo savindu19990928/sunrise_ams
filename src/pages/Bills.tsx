@@ -21,7 +21,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { SearchInput } from '../components/ui/SearchInput';
 import { type BillPdfSources, buildBillBundle, downloadBillPdf } from '../utils/billPdf';
 import { formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from '../utils/format';
-import { billOutstanding, billStatus } from '../utils/lookup';
+import { billOutstanding, billRentDue, billStatus, billUtilities } from '../utils/lookup';
 
 const statusTone: Record<string, BadgeTone> = { paid: 'success', partial: 'warn', unpaid: 'danger' };
 
@@ -68,7 +68,7 @@ export function Bills() {
 
   const totals = useMemo(
     () => ({
-      billed: filtered.reduce((sum, bill) => sum + toNumber(bill.total_due), 0),
+      billed: filtered.reduce((sum, bill) => sum + billRentDue(bill), 0),
       collected: filtered.reduce((sum, bill) => sum + toNumber(bill.amount_paid), 0),
       outstanding: filtered.reduce((sum, bill) => sum + billOutstanding(bill), 0)
     }),
@@ -111,24 +111,34 @@ export function Bills() {
   { key: 'month', header: 'Month', render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatMonth(bill.billing_month)}</span> },
   { key: 'due', header: 'Due date', render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatDate(bill.due_date)}</span> },
   {
-    key: 'breakdown',
-    header: 'Rent + utilities',
+    key: 'total',
+    header: 'Rent due',
     align: 'right',
     render: (bill) =>
-    <span className="whitespace-nowrap text-[13px] text-ink-muted">
-          {formatCurrency(bill.rent)} + {formatCurrency(toNumber(bill.electricity) + toNumber(bill.water))}
+    <span className="whitespace-nowrap">
+          <span className="block font-semibold text-ink">{formatCurrency(billRentDue(bill))}</span>
+          {toNumber(bill.deposit_deduction) > 0 &&
+      <span className="block text-[12px] text-ink-soft">
+              {formatCurrency(bill.rent)} − {formatCurrency(bill.deposit_deduction)} deposit
+            </span>
+      }
         </span>
 
   },
   {
-    key: 'total',
-    header: 'Total due',
+    key: 'utilities',
+    header: 'Utilities',
     align: 'right',
-    render: (bill) => <span className="font-semibold text-ink">{formatCurrency(bill.total_due)}</span>
+    render: (bill) =>
+    <span className="whitespace-nowrap">
+          <span className="block text-ink-muted">{formatCurrency(billUtilities(bill))}</span>
+          <span className="block text-[12px] text-ink-soft">paid to supplier</span>
+        </span>
+
   },
   {
     key: 'outstanding',
-    header: 'Outstanding',
+    header: 'Rent outstanding',
     align: 'right',
     render: (bill) => {
       const value = billOutstanding(bill);
@@ -149,7 +159,7 @@ export function Bills() {
     <div className="space-y-5">
       <PageHeader
         title="Bills"
-        description="One bill per lease each month: rent less the deposit deduction (while deposit remains), plus electricity and water."
+        description="One bill per lease each month. Tenants pay rent less the deposit deduction here; electricity and water are shown for reference and paid directly to the supplier."
         actions={
         <>
             <Button
@@ -160,7 +170,7 @@ export function Bills() {
               setPaymentOpen(true);
             }}>
             
-              Record payment
+              Record rent payment
             </Button>
             <Button variant="secondary" icon={DownloadIcon} onClick={() => setDownloadOpen(true)} disabled={!bills.length}>
               Download bills
@@ -174,17 +184,17 @@ export function Bills() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
-          <p className="text-[13px] text-ink-muted">Billed</p>
+          <p className="text-[13px] text-ink-muted">Rent billed</p>
           <p className="mt-1.5 text-[22px] font-semibold tracking-[-0.02em] text-ink">{formatCurrency(totals.billed)}</p>
         </div>
         <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
-          <p className="text-[13px] text-ink-muted">Collected</p>
+          <p className="text-[13px] text-ink-muted">Rent collected</p>
           <p className="mt-1.5 text-[22px] font-semibold tracking-[-0.02em] text-success-600">
             {formatCurrency(totals.collected)}
           </p>
         </div>
         <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
-          <p className="text-[13px] text-ink-muted">Outstanding</p>
+          <p className="text-[13px] text-ink-muted">Rent outstanding</p>
           <p className="mt-1.5 text-[22px] font-semibold tracking-[-0.02em] text-danger-600">
             {formatCurrency(totals.outstanding)}
           </p>

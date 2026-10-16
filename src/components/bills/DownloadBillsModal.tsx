@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { Bill } from '../../types';
 import { type BillPdfSources, buildBillBundle, downloadBillsPdf } from '../../utils/billPdf';
 import { formatCurrency, formatMonth, monthInputValue } from '../../utils/format';
+import { billRentDue } from '../../utils/lookup';
 import { Button } from '../ui/Button';
 import { Field, Input } from '../ui/Field';
 import { Modal } from '../ui/Modal';
@@ -48,7 +49,7 @@ export function DownloadBillsModal({ open, onClose, bills, sources, defaultMonth
   }, [month]);
 
   const chosen = scope === 'all' ? monthBills : monthBills.filter((bill) => selected.includes(bill.id));
-  const total = chosen.reduce((sum, bill) => sum + Number(bill.total_due ?? 0), 0);
+  const total = chosen.reduce((sum, bill) => sum + billRentDue(bill), 0);
 
   const toggle = (id: number) =>
   setSelected((prev) => prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]);
@@ -155,7 +156,7 @@ export function DownloadBillsModal({ open, onClose, bills, sources, defaultMonth
                       {bill.customer_name ?? `Lease #${bill.lease}`}
                       <span className="ml-2 text-ink-soft">Room {bill.room_number ?? '—'}</span>
                     </span>
-                    <span className="whitespace-nowrap text-[12px] text-ink-muted">{formatCurrency(bill.total_due)}</span>
+                    <span className="whitespace-nowrap text-[12px] text-ink-muted">{formatCurrency(billRentDue(bill))}</span>
                   </label>
             )
             }

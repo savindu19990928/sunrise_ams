@@ -30,7 +30,7 @@ import {
   titleCase,
   toNumber } from
 '../utils/format';
-import { billOutstanding, billStatus, depositBalance } from '../utils/lookup';
+import { billOutstanding, billRentDue, billStatus, depositBalance } from '../utils/lookup';
 
 const quickActions = [
 { label: 'Add customer', to: '/customers?new=1', icon: UserPlusIcon },
@@ -62,7 +62,7 @@ export function Dashboard() {
       occupancy: rooms.length ? Math.round(occupied / rooms.length * 100) : 0,
       occupied,
       monthBillCount: monthBills.length,
-      monthBilled: monthBills.reduce((sum, bill) => sum + toNumber(bill.total_due), 0),
+      monthBilled: monthBills.reduce((sum, bill) => sum + billRentDue(bill), 0),
       monthOutstanding: monthBills.reduce((sum, bill) => sum + billOutstanding(bill), 0),
       collectedThisMonth,
       depositsHeld: leases.
@@ -93,7 +93,7 @@ export function Dashboard() {
   },
   { key: 'month', header: 'Month', render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatMonth(bill.billing_month)}</span> },
   { key: 'due', header: 'Due', render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatDate(bill.due_date)}</span> },
-  { key: 'total', header: 'Total', align: 'right', render: (bill) => <span className="font-medium text-ink">{formatCurrency(bill.total_due)}</span> },
+  { key: 'total', header: 'Rent due', align: 'right', render: (bill) => <span className="font-medium text-ink">{formatCurrency(billRentDue(bill))}</span> },
   {
     key: 'status',
     header: 'Status',

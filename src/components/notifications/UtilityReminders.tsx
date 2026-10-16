@@ -2,26 +2,25 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { CheckIcon, GaugeIcon, TriangleAlertIcon } from 'lucide-react';
 import type { MissingUtilityReminder, UtilityBillReminder } from '../../types/notifications';
-import { formatCurrency, formatDate, formatMonth } from '../../utils/format';
+import { formatCurrency, formatDate, formatMonth, monthInputValue } from '../../utils/format';
 import { Badge } from '../ui/Badge';
-import { Button } from '../ui/Button';
 import { Card, CardHeader } from '../ui/Card';
 import { EmptyState } from '../ui/States';
 
 interface UtilityRemindersProps {
   bills: UtilityBillReminder[];
   missing: MissingUtilityReminder[];
-  onMarkPaid: (item: UtilityBillReminder) => void;
 }
 
-export function UtilityReminders({ bills, missing, onMarkPaid }: UtilityRemindersProps) {
+/** Payments are recorded on the Utilities page with the customer's supplier receipt. */
+export function UtilityReminders({ bills, missing }: UtilityRemindersProps) {
   const empty = bills.length === 0 && missing.length === 0;
 
   return (
     <Card>
       <CardHeader
         title="Utility bills to pay"
-        description="Unpaid provider bills and rooms still missing this month's readings." />
+        description="Room bills tenants haven't confirmed paying to the supplier, and rooms missing readings." />
       
       {empty ?
       <EmptyState
@@ -86,9 +85,13 @@ export function UtilityReminders({ bills, missing, onMarkPaid }: UtilityReminder
                     <p className={`text-[15px] font-semibold ${item.is_overdue ? 'text-danger-600' : 'text-ink'}`}>
                       {formatCurrency(item.total_cost)}
                     </p>
-                    <Button variant="secondary" size="sm" icon={CheckIcon} onClick={() => onMarkPaid(item)}>
-                      Mark paid
-                    </Button>
+                    <Link
+                to={`/utilities?month=${monthInputValue(item.billing_month)}`}
+                className="inline-flex h-9 flex-none items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:bg-canvas">
+                
+                      <CheckIcon className="h-4 w-4" aria-hidden="true" />
+                      Record payment
+                    </Link>
                   </div>
                 </li>
           )}

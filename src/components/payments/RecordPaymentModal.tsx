@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import type { Bill, ID, Payment, PaymentMethod } from '../../types';
 import { ApiError, apiRequest } from '../../utils/api';
 import { formatCurrency, formatMonth, toNumber, today } from '../../utils/format';
-import { billOutstanding } from '../../utils/lookup';
+import { billOutstanding, billRentDue } from '../../utils/lookup';
 import { Field, Input, Select } from '../ui/Field';
 import { FormModal } from '../ui/FormModal';
 
@@ -99,9 +99,9 @@ export function RecordPaymentModal({ open, bills, preselectedBillId, onClose, on
       open={open}
       onClose={onClose}
       onSubmit={handleSubmit}
-      title="Record payment"
-      description="Manual entry — payments are always recorded against a specific bill."
-      submitLabel="Record payment"
+      title="Record rent payment"
+      description="Rent only. Utility bills are paid by the tenant to the supplier and recorded on the Utilities page."
+      submitLabel="Record rent payment"
       pending={pending}
       error={error}>
       
@@ -126,11 +126,11 @@ export function RecordPaymentModal({ open, bills, preselectedBillId, onClose, on
       {selectedBill &&
       <div className="grid gap-3 rounded-xl border border-line bg-subtle px-4 py-3 sm:grid-cols-3">
           <div>
-            <p className="text-[11px] uppercase tracking-wide text-ink-soft">Total due</p>
-            <p className="mt-0.5 text-sm font-semibold text-ink">{formatCurrency(selectedBill.total_due)}</p>
+            <p className="text-[11px] uppercase tracking-wide text-ink-soft">Rent due</p>
+            <p className="mt-0.5 text-sm font-semibold text-ink">{formatCurrency(billRentDue(selectedBill))}</p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-wide text-ink-soft">Already paid</p>
+            <p className="text-[11px] uppercase tracking-wide text-ink-soft">Rent paid</p>
             <p className="mt-0.5 text-sm font-semibold text-ink">{formatCurrency(selectedBill.amount_paid)}</p>
           </div>
           <div>

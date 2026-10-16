@@ -107,11 +107,11 @@ export function Payments() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Payments"
-        description="Every payment is recorded manually against a specific bill — there are no online payments."
+        title="Rent payments"
+        description="Lease rent collected against each bill. Utility payments to suppliers are kept separately under Supplier payments."
         actions={
         <Button icon={BanknoteIcon} onClick={() => setPaymentOpen(true)}>
-            Record payment
+            Record rent payment
           </Button>
         } />
       

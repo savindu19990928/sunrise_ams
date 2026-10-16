@@ -27,6 +27,8 @@ const dateKeys = ['date', 'month', 'period'];
 
 export function isCurrencyKey(key: string): boolean {
   const lower = key.toLowerCase();
+  // Usage columns (units, per-day averages) and counts are quantities, not money.
+  if (/units|per_day|count|_id$/.test(lower)) return false;
   return currencyKeys.some((needle) => lower.includes(needle));
 }
 

@@ -30,6 +30,17 @@ export function depositThreshold(customer: Customer | undefined | null): number 
 }
 
 /**
+ * Threshold recorded on the lease. Falls back to the customer's value for
+ * leases created before the threshold moved onto the lease.
+ */
+export function leaseThreshold(lease: Lease | undefined | null, customer?: Customer | null): number {
+  if (lease && lease.minimum_deposit_threshold !== undefined && lease.minimum_deposit_threshold !== null) {
+    return Math.max(0, Number(lease.minimum_deposit_threshold) || 0);
+  }
+  return depositThreshold(customer);
+}
+
+/**
  * Deduction the next bill will apply. Prefers the API's live value; otherwise
  * the monthly amount capped so the balance never drops below the threshold,
  * and 0 once the balance is at or below it (tenant pays full rent).
@@ -44,8 +55,25 @@ export function nextDeduction(lease: Lease | undefined | null, threshold = 0): n
   return Math.min(Number(lease.monthly_deposit_deduction ?? 0), balance - threshold);
 }
 
+/**
+ * Rent the tenant owes the business for a bill: rent less the deposit deduction.
+ * Utilities are never part of it — tenants pay those directly to the supplier.
+ */
+export function billRentDue(bill: Bill): number {
+  if (bill.net_rent !== undefined && bill.net_rent !== null && bill.net_rent !== '') {
+    return Math.max(0, Number(bill.net_rent) || 0);
+  }
+  return Math.max(0, Number(bill.rent ?? 0) - Number(bill.deposit_deduction ?? 0));
+}
+
+/** Utility charges shown on a bill for reference only — settled with the supplier. */
+export function billUtilities(bill: Bill): number {
+  return Number(bill.electricity ?? 0) + Number(bill.water ?? 0);
+}
+
+/** Rent still owed on a bill. */
 export function billOutstanding(bill: Bill): number {
-  return Math.max(0, Number(bill.total_due ?? 0) - Number(bill.amount_paid ?? 0));
+  return Math.max(0, billRentDue(bill) - Number(bill.amount_paid ?? 0));
 }
 
 /**
@@ -54,7 +82,7 @@ export function billOutstanding(bill: Bill): number {
  */
 export function billStatus(bill: Bill): BillStatus {
   if (bill.status === 'paid' || bill.status === 'partial' || bill.status === 'unpaid') return bill.status;
-  const total = Number(bill.total_due ?? 0);
+  const total = billRentDue(bill);
   const paid = Number(bill.amount_paid ?? 0);
   if (total > 0 && paid >= total) return 'paid';
   if (paid > 0) return 'partial';
