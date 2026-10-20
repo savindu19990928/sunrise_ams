@@ -9,6 +9,7 @@ import {
   LayoutDashboardIcon,
   PlugZapIcon,
   ReceiptTextIcon,
+  SettingsIcon,
   ShieldCheckIcon,
   TimerOffIcon,
   UsersIcon,
@@ -63,5 +64,8 @@ export const navSections: NavSection[] = [
 },
 {
   label: 'Administration',
-  items: [{ label: 'Staff accounts', to: '/staff', icon: ShieldCheckIcon, superuserOnly: true }]
+  items: [
+    { label: 'Staff accounts', to: '/staff', icon: ShieldCheckIcon, superuserOnly: true },
+    { label: 'Settings & Updates', to: '/settings', icon: SettingsIcon }
+  ]
 }];

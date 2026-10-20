@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import { AppShell } from './components/layout/AppShell';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { UpdateProvider } from './contexts/UpdateContext';
 import { Bills } from './pages/Bills';
 import { Customers } from './pages/Customers';
 import { Dashboard } from './pages/Dashboard';
@@ -15,6 +16,7 @@ import { Reminders } from './pages/Reminders';
 import { Repairs } from './pages/Repairs';
 import { Reports } from './pages/Reports';
 import { Rooms } from './pages/Rooms';
+import { Settings } from './pages/Settings';
 import { Staff } from './pages/Staff';
 import { Utilities } from './pages/Utilities';
 import { UtilityPayments } from './pages/UtilityPayments';
@@ -47,40 +49,43 @@ export function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <HashRouter>
-          <ThemedToaster />
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route
-              element={
-                <RequireAuth>
-                  <AppShell />
-                </RequireAuth>
-              }>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/reminders" element={<Reminders />} />
-              <Route path="/rooms" element={<Rooms />} />
-              <Route path="/customers" element={<Customers />} />
-              <Route path="/leases" element={<Leases />} />
-              <Route path="/utilities" element={<Utilities />} />
-              <Route path="/utility-payments" element={<UtilityPayments />} />
-              <Route path="/bills" element={<Bills />} />
-              <Route path="/payments" element={<Payments />} />
-              <Route path="/overdue" element={<Overdue />} />
-              <Route path="/repairs" element={<Repairs />} />
-              <Route path="/reports" element={<Reports />} />
+        <UpdateProvider>
+          <HashRouter>
+            <ThemedToaster />
+            <Routes>
+              <Route path="/login" element={<Login />} />
               <Route
-                path="/staff"
                 element={
-                  <RequireSuperuser>
-                    <Staff />
-                  </RequireSuperuser>
-                }
-              />
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </HashRouter>
+                  <RequireAuth>
+                    <AppShell />
+                  </RequireAuth>
+                }>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/reminders" element={<Reminders />} />
+                <Route path="/rooms" element={<Rooms />} />
+                <Route path="/customers" element={<Customers />} />
+                <Route path="/leases" element={<Leases />} />
+                <Route path="/utilities" element={<Utilities />} />
+                <Route path="/utility-payments" element={<UtilityPayments />} />
+                <Route path="/bills" element={<Bills />} />
+                <Route path="/payments" element={<Payments />} />
+                <Route path="/overdue" element={<Overdue />} />
+                <Route path="/repairs" element={<Repairs />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route
+                  path="/staff"
+                  element={
+                    <RequireSuperuser>
+                      <Staff />
+                    </RequireSuperuser>
+                  }
+                />
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </HashRouter>
+        </UpdateProvider>
       </AuthProvider>
     </ThemeProvider>
   );

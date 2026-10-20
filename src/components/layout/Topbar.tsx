@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDownIcon, LogOutIcon, MenuIcon } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronDownIcon, LogOutIcon, MenuIcon, SettingsIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { initials } from '../../utils/format';
 import { ThemeToggle } from '../ui/ThemeToggle';
@@ -10,6 +11,7 @@ interface TopbarProps {
 }
 
 export function Topbar({ onOpenNav }: TopbarProps) {
+  const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -79,6 +81,19 @@ export function Topbar({ onOpenNav }: TopbarProps) {
               </div>
               <div className="border-b border-line">
                 <ThemeToggle variant="menu-item" />
+              </div>
+              <div className="border-b border-line">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    navigate('/settings');
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-ink-muted transition-colors duration-150 ease-out hover:bg-canvas hover:text-ink">
+                  <SettingsIcon className="h-4 w-4" aria-hidden="true" />
+                  Settings & Updates
+                </button>
               </div>
               <button
               type="button"
