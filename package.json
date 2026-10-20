@@ -1,6 +1,6 @@
 {
   "name": "sunrise-ams",
-  "version": "1.5.6",
+  "version": "1.5.8",
   "description": "Sunrise Apartments Management System",
   "author": "Devrious",
   "private": true,
@@ -99,7 +99,7 @@
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Sunrise Apartments AMS",
+      "shortcutName": "Sunrise AMS",
       "uninstallDisplayName": "Sunrise Apartments AMS",
       "guid": "5d2f8319-75a7-4b92-b4c4-726e68dcf092",
       "include": "build/installer.nsh"

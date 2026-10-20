@@ -112,11 +112,8 @@ function getAutoUpdater() {
       autoUpdater.autoDownload = false;
       autoUpdater.autoInstallOnAppQuit = true;
 
-      if (GITHUB_TOKEN) {
-        autoUpdater.requestHeaders = {
-          Authorization: `token ${GITHUB_TOKEN}`,
-        };
-      }
+      // Note: For public repositories, requestHeaders should NOT be set
+      // because auth headers on public download redirects (AWS S3) can trigger 404 or auth failures.
 
       if (isDev) {
         autoUpdater.forceDevUpdateConfig = true;
@@ -149,9 +146,10 @@ function getAutoUpdater() {
       });
 
       autoUpdater.on('error', (err) => {
-        console.error('[Updater] Error:', err);
+        const rawMsg = err ? err.message || err.toString() : '';
+        console.error('[Updater] Error:', rawMsg);
         sendStatusToWindow('error', {
-          error: err ? err.message || err.toString() : 'Failed to check for updates',
+          error: formatUpdaterErrorMessage(rawMsg),
         });
       });
 
@@ -184,8 +182,16 @@ function getAutoUpdater() {
   return autoUpdater;
 }
 
-// Check for updates function
-async function checkForUpdates(silent = false) {
+function formatUpdaterErrorMessage(msg) {
+  if (!msg) return 'Failed to check for updates';
+  if (msg.includes('Cannot find latest.yml') || msg.includes('HttpError: 404')) {
+    return 'The latest release is still finishing upload on GitHub. Please check again in a minute.';
+  }
+  return msg;
+}
+
+// Check for updates function with automatic single retry for upload race conditions
+async function checkForUpdates(silent = false, isRetry = false) {
   sendStatusToWindow('checking', { error: null });
 
   // In packaged mode, use electron-updater
@@ -197,8 +203,17 @@ async function checkForUpdates(silent = false) {
         return { success: true, result };
       } catch (err) {
         console.error('[Updater] checkForUpdates failed:', err.message);
-        sendStatusToWindow('error', { error: err.message });
-        return { success: false, error: err.message };
+
+        // If latest.yml 404 happened right after a new release was published, wait 4s and retry once
+        if (!isRetry && (err.message.includes('latest.yml') || err.message.includes('404'))) {
+          console.log('[Updater] latest.yml not yet available, retrying in 4 seconds...');
+          await new Promise((r) => setTimeout(r, 4000));
+          return await checkForUpdates(silent, true);
+        }
+
+        const friendlyMsg = formatUpdaterErrorMessage(err.message);
+        sendStatusToWindow('error', { error: friendlyMsg });
+        return { success: false, error: friendlyMsg };
       }
     }
   }
