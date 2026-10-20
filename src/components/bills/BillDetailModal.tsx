@@ -131,7 +131,7 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
               <span className="text-[13px] text-ink-muted">Due {formatDate(bill.due_date)}</span>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-bill-line bg-white/60">
+            <div className="overflow-hidden rounded-xl border border-bill-line bg-surface/70">
               <dl className="divide-y divide-bill-line px-4">
                 <Line label="Room rent" value={formatCurrency(bill.rent)} />
                 {deduction > 0 ?
@@ -148,7 +148,7 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
               </div>
             </div>
 
-            <div className="rounded-xl border border-bill-line bg-white/60 px-4">
+            <div className="rounded-xl border border-bill-line bg-surface/70 px-4">
               <dl className="divide-y divide-bill-line">
                 <Line label="Deposit balance after this bill" value={formatCurrency(bill.remaining_deposit)} />
                 <Line label="Rent paid so far" value={formatCurrency(bill.amount_paid)} />
@@ -166,7 +166,7 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
                 <h3 className="text-[13px] font-medium text-ink">Utilities this month</h3>
                 <p className="text-[12px] text-ink-muted">Paid directly to the supplier</p>
               </div>
-              <dl className="mt-1 divide-y divide-bill-line rounded-xl border border-bill-line bg-white/60 px-4">
+              <dl className="mt-1 divide-y divide-bill-line rounded-xl border border-bill-line bg-surface/70 px-4">
                 <Line label={`Electricity${usageText(current?.electricityUnits, bill.billing_month)}`} value={formatCurrency(bill.electricity)} />
                 <Line label={`Water${usageText(current?.waterUnits, bill.billing_month)}`} value={formatCurrency(bill.water)} />
                 <div className="flex items-baseline justify-between gap-4 py-2.5">

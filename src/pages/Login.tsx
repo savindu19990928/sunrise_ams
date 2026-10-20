@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Footer } from '../components/layout/Footer';
 import { Button } from '../components/ui/Button';
 import { Field, Input } from '../components/ui/Field';
+import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { ApiError } from '../utils/api';
 
 export function Login() {
@@ -32,7 +33,10 @@ export function Login() {
   };
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-canvas">
+    <div className="relative flex min-h-screen w-full flex-col bg-canvas">
+      <div className="absolute right-4 top-4 z-10 sm:right-6 sm:top-6">
+        <ThemeToggle />
+      </div>
       <main className="flex flex-1 items-center justify-center px-4 py-10 sm:px-6">
         <motion.section
           initial={{ opacity: 0, y: 12 }}

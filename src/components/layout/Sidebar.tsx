@@ -76,7 +76,7 @@ export function Sidebar({ isSuperuser, mobileOpen, onClose }: SidebarProps) {
       {/* Mobile drawer */}
       {mobileOpen &&
       <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-ink/35" onClick={onClose} aria-hidden="true" />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
           <aside className="relative flex h-full w-[17rem] max-w-[82%] flex-col border-r border-line bg-surface shadow-pop">
             <div className="flex items-center justify-between">
               <Brand />

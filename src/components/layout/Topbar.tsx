@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDownIcon, LogOutIcon, MenuIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { initials } from '../../utils/format';
+import { ThemeToggle } from '../ui/ThemeToggle';
 import { ReminderBell } from './ReminderBell';
 
 interface TopbarProps {
@@ -48,6 +49,7 @@ export function Topbar({ onOpenNav }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <ThemeToggle />
         <ReminderBell />
         <div className="relative" ref={menuRef}>
           <button
@@ -74,6 +76,9 @@ export function Topbar({ onOpenNav }: TopbarProps) {
                 <p className="mt-0.5 text-[12px] text-ink-soft">
                   {user?.is_superuser ? 'Superuser' : 'Staff member'}
                 </p>
+              </div>
+              <div className="border-b border-line">
+                <ThemeToggle variant="menu-item" />
               </div>
               <button
               type="button"

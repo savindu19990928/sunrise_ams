@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AppShell } from './components/layout/AppShell';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import { Bills } from './pages/Bills';
 import { Customers } from './pages/Customers';
 import { Dashboard } from './pages/Dashboard';
@@ -37,44 +38,50 @@ function RequireSuperuser({ children }: {children: React.ReactNode;}) {
   return <>{children}</>;
 }
 
+function ThemedToaster() {
+  const { isDark } = useTheme();
+  return <Toaster position="top-right" richColors closeButton theme={isDark ? 'dark' : 'light'} />;
+}
+
 export function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Toaster position="top-right" richColors closeButton />
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
-            element={
-            <RequireAuth>
-                <AppShell />
-              </RequireAuth>
-            }>
-            
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/reminders" element={<Reminders />} />
-            <Route path="/rooms" element={<Rooms />} />
-            <Route path="/customers" element={<Customers />} />
-            <Route path="/leases" element={<Leases />} />
-            <Route path="/utilities" element={<Utilities />} />
-            <Route path="/utility-payments" element={<UtilityPayments />} />
-            <Route path="/bills" element={<Bills />} />
-            <Route path="/payments" element={<Payments />} />
-            <Route path="/overdue" element={<Overdue />} />
-            <Route path="/repairs" element={<Repairs />} />
-            <Route path="/reports" element={<Reports />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <ThemedToaster />
+          <Routes>
+            <Route path="/login" element={<Login />} />
             <Route
-              path="/staff"
               element={
-              <RequireSuperuser>
-                  <Staff />
-                </RequireSuperuser>
-              } />
-            
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>);
-
+                <RequireAuth>
+                  <AppShell />
+                </RequireAuth>
+              }>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/reminders" element={<Reminders />} />
+              <Route path="/rooms" element={<Rooms />} />
+              <Route path="/customers" element={<Customers />} />
+              <Route path="/leases" element={<Leases />} />
+              <Route path="/utilities" element={<Utilities />} />
+              <Route path="/utility-payments" element={<UtilityPayments />} />
+              <Route path="/bills" element={<Bills />} />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/overdue" element={<Overdue />} />
+              <Route path="/repairs" element={<Repairs />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route
+                path="/staff"
+                element={
+                  <RequireSuperuser>
+                    <Staff />
+                  </RequireSuperuser>
+                }
+              />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
+  );
 }
