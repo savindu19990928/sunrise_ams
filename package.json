@@ -1,6 +1,6 @@
 {
   "name": "sunrise-ams",
-  "version": "1.0.2",
+  "version": "1.5.0",
   "description": "Sunrise Apartments Management System",
   "author": "Devrious",
   "private": true,
@@ -81,23 +81,21 @@
     "win": {
       "icon": "build/icon.ico",
       "target": [
-        "msi",
         "nsis",
         "portable"
       ]
     },
-    "msi": {
-      "oneClick": false,
-      "perMachine": true,
-      "runAfterFinish": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sunrise Apartments AMS",
+      "uninstallDisplayName": "Sunrise Apartments AMS",
+      "guid": "5d2f8319-75a7-4b92-b4c4-726e68dcf092",
+      "include": "build/installer.nsh"
     }
   }
 }

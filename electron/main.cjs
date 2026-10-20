@@ -447,7 +447,7 @@ ipcMain.handle('updater:install', () => {
 
   const updater = getAutoUpdater();
   if (updater) {
-    updater.quitAndInstall(false, true);
+    updater.quitAndInstall(true, true);
     return { success: true };
   }
   return { success: false, message: 'Updater not available' };
