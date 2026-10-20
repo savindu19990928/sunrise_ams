@@ -1,6 +1,6 @@
 {
   "name": "sunrise-ams",
-  "version": "1.5.0",
+  "version": "1.5.5",
   "description": "Sunrise Apartments Management System",
   "author": "Devrious",
   "private": true,
@@ -80,6 +80,13 @@
     ],
     "win": {
       "icon": "build/icon.ico",
+      "legalTrademarks": "Devrious",
+      "verifyUpdateCodeSignature": false,
+      "signtoolOptions": {
+        "certificateFile": "build/devrious.pfx",
+        "certificatePassword": "Devrious2026",
+        "publisherName": "Devrious"
+      },
       "target": [
         "nsis",
         "portable"
