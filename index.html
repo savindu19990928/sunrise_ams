@@ -9,15 +9,39 @@
     (function () {
       try {
         var stored = localStorage.getItem('sunrise_ams_theme');
-        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (stored === 'dark' || (!stored && prefersDark)) {
+        var prefersDark = false;
+        try {
+          if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+            var mq = window.matchMedia('(prefers-color-scheme: dark)');
+            if (mq && typeof mq.matches === 'boolean') {
+              prefersDark = mq.matches;
+            }
+          }
+        } catch (e) {
+          prefersDark = false;
+        }
+
+        var isDark = false;
+        if (stored === 'dark') {
+          isDark = true;
+        } else if (stored === 'light') {
+          isDark = false;
+        } else {
+          // 'system', undefined, or unrecognized: follow OS dark mode, fallback to light
+          isDark = prefersDark;
+        }
+
+        if (isDark) {
           document.documentElement.classList.add('dark');
           document.documentElement.style.colorScheme = 'dark';
         } else {
           document.documentElement.classList.remove('dark');
           document.documentElement.style.colorScheme = 'light';
         }
-      } catch (e) {}
+      } catch (e) {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.style.colorScheme = 'light';
+      }
     })();
   </script>
 </head>

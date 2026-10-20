@@ -1,39 +1,114 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-export type Theme = 'light' | 'dark';
+export type ThemeMode = 'light' | 'dark' | 'system';
+export type Theme = ThemeMode;
+export type ResolvedTheme = 'light' | 'dark';
 
-interface ThemeContextValue {
-  theme: Theme;
+export interface ThemeContextValue {
+  /** The chosen theme mode: 'light', 'dark', or 'system' */
+  theme: ThemeMode;
+  /** The effective resolved theme: 'light' or 'dark' */
+  resolvedTheme: ResolvedTheme;
+  /** True when the active resolved theme is 'dark' */
   isDark: boolean;
+  /** True when the user's OS is recognized as dark mode */
+  systemIsDark: boolean;
+  /** Cycle theme: light -> dark -> system */
   toggleTheme: () => void;
-  setTheme: (theme: Theme) => void;
+  /** Set explicit theme mode */
+  setTheme: (theme: ThemeMode) => void;
 }
 
 const STORAGE_KEY = 'sunrise_ams_theme';
 
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+/**
+ * Safely inspects operating system dark mode preference.
+ * If media queries are unsupported, fail, or the OS theme cannot be recognized,
+ * returns false so light mode is used as the safe fallback.
+ */
+export function getSystemIsDark(): boolean {
+  try {
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      if (mq && typeof mq.matches === 'boolean') {
+        return mq.matches;
+      }
+    }
+  } catch {
+    // If it cannot recognise the OS theme, fallback to light mode
+  }
+  return false;
+}
 
-function getInitialTheme(): Theme {
+function getInitialTheme(): ThemeMode {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved === 'light' || saved === 'dark') {
+    if (saved === 'light' || saved === 'dark' || saved === 'system') {
       return saved;
-    }
-    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark';
     }
   } catch {
     // ignore storage errors
   }
-  return 'light';
+  // Default to system mode when no preference has been saved
+  return 'system';
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
+const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-  const applyTheme = useCallback((nextTheme: Theme) => {
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = useState<ThemeMode>(getInitialTheme);
+  const [systemIsDark, setSystemIsDark] = useState<boolean>(getSystemIsDark);
+
+  // Listen to OS theme changes in real time
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+
+    let mq: MediaQueryList;
+    try {
+      mq = window.matchMedia('(prefers-color-scheme: dark)');
+    } catch {
+      return;
+    }
+    if (!mq) return;
+
+    const handleChange = (event: MediaQueryListEvent | MediaQueryList) => {
+      try {
+        const matches = typeof event.matches === 'boolean' ? event.matches : getSystemIsDark();
+        setSystemIsDark(matches);
+      } catch {
+        setSystemIsDark(false);
+      }
+    };
+
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', handleChange);
+      return () => mq.removeEventListener('change', handleChange);
+    }
+
+    const legacyMq = mq as unknown as {
+      addListener?: (cb: (e: MediaQueryListEvent | MediaQueryList) => void) => void;
+      removeListener?: (cb: (e: MediaQueryListEvent | MediaQueryList) => void) => void;
+    };
+
+    if (typeof legacyMq.addListener === 'function') {
+      legacyMq.addListener(handleChange);
+      return () => legacyMq.removeListener?.(handleChange);
+    }
+  }, []);
+
+  // Compute resolved theme: follows OS when 'system', otherwise explicit mode
+  const resolvedTheme: ResolvedTheme = useMemo(() => {
+    if (theme === 'system') {
+      return systemIsDark ? 'dark' : 'light';
+    }
+    return theme;
+  }, [theme, systemIsDark]);
+
+  const isDark = resolvedTheme === 'dark';
+
+  const applyTheme = useCallback((currentResolved: ResolvedTheme) => {
     const root = document.documentElement;
-    if (nextTheme === 'dark') {
+    if (currentResolved === 'dark') {
       root.classList.add('dark');
       root.style.colorScheme = 'dark';
     } else {
@@ -43,41 +118,39 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    applyTheme(theme);
+    applyTheme(resolvedTheme);
+  }, [resolvedTheme, applyTheme]);
+
+  useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, theme);
     } catch {
       // ignore
     }
-  }, [theme, applyTheme]);
+  }, [theme]);
 
-  // Sync with OS theme changes if user hasn't explicitly saved a choice
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (event: MediaQueryListEvent) => {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) {
-        setThemeState(event.matches ? 'dark' : 'light');
-      }
-    };
-    mq.addEventListener('change', handleChange);
-    return () => mq.removeEventListener('change', handleChange);
-  }, []);
-
-  const setTheme = useCallback((next: Theme) => {
+  const setTheme = useCallback((next: ThemeMode) => {
     setThemeState(next);
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    setThemeState((prev) => {
+      if (prev === 'light') return 'dark';
+      if (prev === 'dark') return 'system';
+      return 'light';
+    });
   }, []);
 
-  const isDark = theme === 'dark';
-
   const value = useMemo(
-    () => ({ theme, isDark, toggleTheme, setTheme }),
-    [theme, isDark, toggleTheme, setTheme]
+    () => ({
+      theme,
+      resolvedTheme,
+      isDark,
+      systemIsDark,
+      toggleTheme,
+      setTheme,
+    }),
+    [theme, resolvedTheme, isDark, systemIsDark, toggleTheme, setTheme]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

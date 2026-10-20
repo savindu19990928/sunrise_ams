@@ -6,18 +6,22 @@ import {
   GithubIcon,
   HelpCircleIcon,
   InfoIcon,
+  MonitorIcon,
+  MoonIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   SparklesIcon,
+  SunIcon,
   TagIcon,
   XCircleIcon,
 } from 'lucide-react';
+import { twMerge } from 'tailwind-merge';
 import { useUpdater } from '../contexts/UpdateContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { Badge, BadgeTone } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
-import { ThemeToggle } from '../components/ui/ThemeToggle';
 
 export function Settings() {
   const {
@@ -30,6 +34,8 @@ export function Settings() {
     downloadUpdate,
     installUpdate,
   } = useUpdater();
+
+  const { theme, systemIsDark, setTheme } = useTheme();
 
   const handleOpenGitHub = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -146,12 +152,12 @@ export function Settings() {
                   {state.status === 'available'
                     ? `A new version (v${state.updateInfo?.version}) is available for download.`
                     : state.status === 'downloaded'
-                    ? 'The update package has been downloaded. Restart the application to apply changes.'
-                    : state.status === 'not-available'
-                    ? 'You are running the latest version available from the GitHub release channel.'
-                    : state.status === 'error'
-                    ? state.error || 'Unable to check for updates. Please check your internet connection.'
-                    : 'Checks for published updates from the official public GitHub repository.'}
+                      ? 'The update package has been downloaded. Restart the application to apply changes.'
+                      : state.status === 'not-available'
+                        ? 'You are running the latest version available from the GitHub release channel.'
+                        : state.status === 'error'
+                          ? state.error || 'Unable to check for updates. Please check your internet connection.'
+                          : 'Checks for published updates from the official public GitHub repository.'}
                 </p>
               </div>
             </div>
@@ -268,82 +274,135 @@ export function Settings() {
         </CardBody>
       </Card>
 
-      {/* GitHub Repository & Automation Information */}
-      <Card>
-        <CardHeader
-          title="GitHub & Release Automation"
-          description="Information on repository connection, environment credentials, and automated Windows builds."
-        />
-        <CardBody className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-line bg-canvas p-4">
-              <div className="flex items-center gap-2 text-ink">
-                <GithubIcon className="h-4 w-4" />
-                <span className="text-sm font-semibold">Repository Details</span>
-              </div>
-              <div className="mt-2.5 space-y-1.5 text-xs text-ink-muted">
-                <p>
-                  <strong className="text-ink">Owner:</strong> savindu19990928
-                </p>
-                <p>
-                  <strong className="text-ink">Repository:</strong> sunrise_ams (Public)
-                </p>
-                <p>
-                  <strong className="text-ink">Channel:</strong> GitHub Releases (latest)
-                </p>
-                <p>
-                  <strong className="text-ink">Credentials:</strong> Configured via local <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px] text-ink">.env</code> file
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-line bg-canvas p-4">
-              <div className="flex items-center gap-2 text-ink">
-                <TagIcon className="h-4 w-4" />
-                <span className="text-sm font-semibold">Automated Windows Releases</span>
-              </div>
-              <p className="mt-2 text-xs text-ink-muted">
-                A GitHub Actions workflow is configured in{' '}
-                <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px] text-ink">
-                  .github/workflows/release.yml
-                </code>
-                . Whenever a new Git tag starting with <code className="font-mono text-ink">v*</code> is pushed, GitHub automatically builds the Windows installer and publishes the release assets.
-              </p>
-              <div className="mt-2.5 rounded-lg bg-surface p-2 font-mono text-[11px] text-ink-muted">
-                git tag v0.0.2 && git push origin v0.0.2
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-line bg-surface p-3.5 text-xs text-ink-muted">
-            <div className="flex items-start gap-2">
-              <HelpCircleIcon className="mt-0.5 h-4 w-4 flex-none text-brand-600" />
-              <div>
-                <strong className="text-ink">Need to publish from your local machine?</strong>
-                <p className="mt-0.5">
-                  Set your Personal Access Token in your <code className="font-mono text-ink">.env</code> file as <code className="font-mono text-ink">GH_TOKEN=your_token</code> and execute <code className="font-mono text-ink">npm run electron:release</code>.
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
-
       {/* Appearance & Theme Section */}
       <Card>
         <CardHeader
           title="Appearance & Theme"
-          description="Personalize the visual appearance of the application."
+          description="Personalize the visual appearance of the application. System Default follows your operating system mode, with light mode as the fallback option."
         />
-        <CardBody className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-ink">Theme Mode</p>
-              <p className="text-xs text-ink-muted">
-                Switch between Light mode and Dark mode.
-              </p>
+        <CardBody className="space-y-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {/* System Default Option */}
+            <button
+              type="button"
+              onClick={() => setTheme('system')}
+              className={twMerge(
+                'group relative flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150',
+                theme === 'system'
+                  ? 'border-brand-600 bg-brand-50/50 ring-2 ring-brand-500/20'
+                  : 'border-line bg-canvas hover:border-ink-soft/40 hover:bg-surface'
+              )}
+            >
+              <div className="flex w-full items-center justify-between">
+                <span
+                  className={twMerge(
+                    'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+                    theme === 'system'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-surface text-ink-muted group-hover:text-ink'
+                  )}
+                >
+                  <MonitorIcon className="h-4 w-4" />
+                </span>
+                {theme === 'system' && (
+                  <Badge tone="brand" className="text-[10px] py-0.5">
+                    Active
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-3">
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-sm font-semibold text-ink">System Default</h4>
+                  <span className="rounded bg-line/60 px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                    Auto
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-ink-muted leading-relaxed">
+                  Automatically syncs with your OS theme ({systemIsDark ? 'currently Dark' : 'currently Light'}).
+                </p>
+              </div>
+            </button>
+
+            {/* Light Mode Option */}
+            <button
+              type="button"
+              onClick={() => setTheme('light')}
+              className={twMerge(
+                'group relative flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150',
+                theme === 'light'
+                  ? 'border-brand-600 bg-brand-50/50 ring-2 ring-brand-500/20'
+                  : 'border-line bg-canvas hover:border-ink-soft/40 hover:bg-surface'
+              )}
+            >
+              <div className="flex w-full items-center justify-between">
+                <span
+                  className={twMerge(
+                    'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+                    theme === 'light'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-surface text-ink-muted group-hover:text-ink'
+                  )}
+                >
+                  <SunIcon className="h-4 w-4 text-warn-500" />
+                </span>
+                {theme === 'light' && (
+                  <Badge tone="brand" className="text-[10px] py-0.5">
+                    Active
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-3">
+                <h4 className="text-sm font-semibold text-ink">Light Mode</h4>
+                <p className="mt-1 text-xs text-ink-muted leading-relaxed">
+                  Clean, bright interface designed for well-lit environments and daytime work.
+                </p>
+              </div>
+            </button>
+
+            {/* Dark Mode Option */}
+            <button
+              type="button"
+              onClick={() => setTheme('dark')}
+              className={twMerge(
+                'group relative flex flex-col items-start rounded-xl border p-4 text-left transition-all duration-150',
+                theme === 'dark'
+                  ? 'border-brand-600 bg-brand-50/50 ring-2 ring-brand-500/20'
+                  : 'border-line bg-canvas hover:border-ink-soft/40 hover:bg-surface'
+              )}
+            >
+              <div className="flex w-full items-center justify-between">
+                <span
+                  className={twMerge(
+                    'flex h-9 w-9 items-center justify-center rounded-lg transition-colors',
+                    theme === 'dark'
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-surface text-ink-muted group-hover:text-ink'
+                  )}
+                >
+                  <MoonIcon className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+                </span>
+                {theme === 'dark' && (
+                  <Badge tone="brand" className="text-[10px] py-0.5">
+                    Active
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-3">
+                <h4 className="text-sm font-semibold text-ink">Dark Mode</h4>
+                <p className="mt-1 text-xs text-ink-muted leading-relaxed">
+                  Deep slate surfaces and dimmed contrast to reduce eye strain in low light.
+                </p>
+              </div>
+            </button>
+          </div>
+
+          {/* Info note about System Mode and fallback */}
+          <div className="flex items-start gap-3 rounded-xl border border-line bg-canvas p-3.5 text-xs text-ink-muted">
+            <InfoIcon className="mt-0.5 h-4 w-4 flex-none text-brand-600" />
+            <div className="leading-relaxed">
+              <span className="font-semibold text-ink">System theme detection & fallback: </span>
+              When <strong className="text-ink">System Default</strong> is selected, Sunrise AMS automatically matches your OS theme (currently detected as <strong className="text-ink">{systemIsDark ? 'Dark mode' : 'Light mode'}</strong>). If your operating system appearance cannot be recognized, <strong className="text-ink">Light mode</strong> is used as the safe fallback option.
             </div>
-            <ThemeToggle />
           </div>
         </CardBody>
       </Card>

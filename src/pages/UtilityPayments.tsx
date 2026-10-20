@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import { InfoIcon } from 'lucide-react';
 import type { BuildingUtilityBill, UtilityPayment } from '../types';
 import { useCollection } from '../hooks/useResource';
 import { ApiErrorState } from '../components/ui/ApiErrorState';

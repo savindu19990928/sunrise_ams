@@ -1,63 +1,158 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MoonIcon, SunIcon } from 'lucide-react';
+import { MonitorIcon, MoonIcon, SunIcon } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 import { useTheme } from '../../contexts/ThemeContext';
 
-interface ThemeToggleProps {
+export interface ThemeToggleProps {
   className?: string;
-  variant?: 'button' | 'switch' | 'menu-item';
+  variant?: 'button' | 'switch' | 'menu-item' | 'segmented';
   size?: 'sm' | 'md';
 }
 
 export function ThemeToggle({
   className,
   variant = 'button',
-  size = 'md'
+  size = 'md',
 }: ThemeToggleProps) {
-  const { isDark, toggleTheme } = useTheme();
+  const { theme, resolvedTheme, systemIsDark, isDark, toggleTheme, setTheme } = useTheme();
 
-  const label = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+  const getLabel = () => {
+    if (theme === 'system') {
+      return `Theme: System (${resolvedTheme === 'dark' ? 'Dark' : 'Light'}) · Click to switch`;
+    }
+    if (theme === 'light') {
+      return 'Theme: Light · Click to switch';
+    }
+    return 'Theme: Dark · Click to switch';
+  };
 
-  if (variant === 'menu-item') {
+  const label = getLabel();
+
+  // Segmented control variant
+  if (variant === 'segmented') {
     return (
-      <button
-        type="button"
-        role="menuitem"
-        onClick={toggleTheme}
+      <div
+        role="group"
+        aria-label="Theme mode selector"
         className={twMerge(
-          'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm text-ink-muted transition-colors duration-150 ease-out hover:bg-canvas hover:text-ink',
+          'inline-flex items-center rounded-xl border border-line bg-canvas p-1',
           className
         )}
       >
-        <span className="flex items-center gap-2">
-          {isDark ? (
-            <SunIcon className="h-4 w-4 text-warn-500" aria-hidden="true" />
-          ) : (
-            <MoonIcon className="h-4 w-4 text-brand-600" aria-hidden="true" />
-          )}
-          <span>{isDark ? 'Dark theme' : 'Light theme'}</span>
-        </span>
-
-        {/* Mini Pill Switch */}
-        <span
+        <button
+          type="button"
+          onClick={() => setTheme('light')}
+          aria-pressed={theme === 'light'}
           className={twMerge(
-            'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-line transition-colors duration-200 ease-in-out',
-            isDark ? 'bg-brand-600 border-brand-600' : 'bg-canvas'
+            'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150',
+            theme === 'light'
+              ? 'bg-surface text-ink shadow-sm ring-1 ring-line font-semibold'
+              : 'text-ink-muted hover:text-ink hover:bg-surface/50'
           )}
-          aria-hidden="true"
         >
-          <span
-            className={twMerge(
-              'inline-block h-3.5 w-3.5 transform rounded-full bg-surface shadow-sm transition-transform duration-200 ease-in-out',
-              isDark ? 'translate-x-4 bg-white' : 'translate-x-0.5 bg-ink'
-            )}
-          />
-        </span>
-      </button>
+          <SunIcon className="h-3.5 w-3.5 text-warn-500" aria-hidden="true" />
+          <span>Light</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTheme('dark')}
+          aria-pressed={theme === 'dark'}
+          className={twMerge(
+            'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150',
+            theme === 'dark'
+              ? 'bg-surface text-ink shadow-sm ring-1 ring-line font-semibold'
+              : 'text-ink-muted hover:text-ink hover:bg-surface/50'
+          )}
+        >
+          <MoonIcon className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" aria-hidden="true" />
+          <span>Dark</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTheme('system')}
+          aria-pressed={theme === 'system'}
+          title={`System default (matches OS: ${systemIsDark ? 'Dark' : 'Light'})`}
+          className={twMerge(
+            'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150',
+            theme === 'system'
+              ? 'bg-surface text-ink shadow-sm ring-1 ring-line font-semibold'
+              : 'text-ink-muted hover:text-ink hover:bg-surface/50'
+          )}
+        >
+          <MonitorIcon className="h-3.5 w-3.5 text-ink-muted" aria-hidden="true" />
+          <span>System</span>
+        </button>
+      </div>
     );
   }
 
+  // Dropdown menu item variant
+  if (variant === 'menu-item') {
+    return (
+      <div className={twMerge('px-3 py-2.5', className)}>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-semibold text-ink">Appearance</span>
+          <span className="text-[11px] font-medium text-ink-muted capitalize">
+            {theme === 'system' ? `System (${resolvedTheme})` : theme}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-1 rounded-lg border border-line bg-canvas p-1">
+          <button
+            type="button"
+            onClick={() => setTheme('light')}
+            title="Light mode"
+            aria-pressed={theme === 'light'}
+            className={twMerge(
+              'flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-all duration-150',
+              theme === 'light'
+                ? 'bg-surface text-ink shadow-sm ring-1 ring-line font-semibold'
+                : 'text-ink-muted hover:text-ink hover:bg-surface/50'
+            )}
+          >
+            <SunIcon className="h-3.5 w-3.5 text-warn-500" aria-hidden="true" />
+            <span>Light</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTheme('dark')}
+            title="Dark mode"
+            aria-pressed={theme === 'dark'}
+            className={twMerge(
+              'flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-all duration-150',
+              theme === 'dark'
+                ? 'bg-surface text-ink shadow-sm ring-1 ring-line font-semibold'
+                : 'text-ink-muted hover:text-ink hover:bg-surface/50'
+            )}
+          >
+            <MoonIcon className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" aria-hidden="true" />
+            <span>Dark</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTheme('system')}
+            title={`System default (${systemIsDark ? 'Dark' : 'Light'})`}
+            aria-pressed={theme === 'system'}
+            className={twMerge(
+              'flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-medium transition-all duration-150',
+              theme === 'system'
+                ? 'bg-surface text-ink shadow-sm ring-1 ring-line font-semibold'
+                : 'text-ink-muted hover:text-ink hover:bg-surface/50'
+            )}
+          >
+            <MonitorIcon className="h-3.5 w-3.5 text-ink-muted" aria-hidden="true" />
+            <span>System</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Switch pill variant
   if (variant === 'switch') {
     return (
       <button
@@ -80,17 +175,19 @@ export function ThemeToggle({
               : 'translate-x-0.5 bg-canvas text-ink'
           )}
         >
-          {isDark ? (
-            <SunIcon className="h-3.5 w-3.5" />
+          {theme === 'system' ? (
+            <MonitorIcon className="h-3.5 w-3.5" />
+          ) : isDark ? (
+            <MoonIcon className="h-3.5 w-3.5" />
           ) : (
-            <MoonIcon className="h-3.5 w-3.5 text-ink-muted" />
+            <SunIcon className="h-3.5 w-3.5 text-warn-500" />
           )}
         </span>
       </button>
     );
   }
 
-  // Standard icon button
+  // Standard icon button (cycles: light -> dark -> system -> light)
   const sizeClasses = size === 'sm' ? 'h-8 w-8' : 'h-9 w-9';
 
   return (
@@ -107,17 +204,19 @@ export function ThemeToggle({
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
-          key={isDark ? 'dark' : 'light'}
+          key={theme}
           initial={{ opacity: 0, rotate: -45, scale: 0.7 }}
           animate={{ opacity: 1, rotate: 0, scale: 1 }}
           exit={{ opacity: 0, rotate: 45, scale: 0.7 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
           className="flex items-center justify-center"
         >
-          {isDark ? (
-            <SunIcon className="h-4 w-4 text-warn-500" aria-hidden="true" />
+          {theme === 'system' ? (
+            <MonitorIcon className="h-4 w-4 text-brand-600 dark:text-brand-400" aria-hidden="true" />
+          ) : theme === 'dark' ? (
+            <MoonIcon className="h-4 w-4 text-brand-600 dark:text-brand-400" aria-hidden="true" />
           ) : (
-            <MoonIcon className="h-4 w-4 text-ink-muted group-hover:text-ink" aria-hidden="true" />
+            <SunIcon className="h-4 w-4 text-warn-500" aria-hidden="true" />
           )}
         </motion.div>
       </AnimatePresence>
