@@ -3,8 +3,6 @@ import {
   CheckCircle2Icon,
   DownloadCloudIcon,
   ExternalLinkIcon,
-  GithubIcon,
-  HelpCircleIcon,
   InfoIcon,
   MonitorIcon,
   MoonIcon,
@@ -414,7 +412,7 @@ export function Settings() {
           description="Hardware, runtime platform, and application identifier."
         />
         <CardBody>
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-lg border border-line bg-canvas p-3">
               <dt className="text-xs text-ink-muted">Application</dt>
               <dd className="mt-1 text-sm font-semibold text-ink">Sunrise AMS</dd>
@@ -422,6 +420,10 @@ export function Settings() {
             <div className="rounded-lg border border-line bg-canvas p-3">
               <dt className="text-xs text-ink-muted">Version</dt>
               <dd className="mt-1 text-sm font-semibold text-ink">v{state.currentVersion}</dd>
+            </div>
+            <div className="rounded-lg border border-line bg-canvas p-3">
+              <dt className="text-xs text-ink-muted">Author</dt>
+              <dd className="mt-1 text-sm font-semibold text-ink">Devrious</dd>
             </div>
             <div className="rounded-lg border border-line bg-canvas p-3">
               <dt className="text-xs text-ink-muted">Target Platform</dt>
