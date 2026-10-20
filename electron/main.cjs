@@ -36,15 +36,58 @@ function createWindow() {
   });
 
   if (isDev) {
-    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
-    mainWindow.loadURL(devServerUrl);
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:57832';
+    let isLoaded = false;
+    let retryTimer = null;
+
+    const scheduleRetry = () => {
+      if (isLoaded || retryTimer || !mainWindow || mainWindow.isDestroyed()) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (!isLoaded && mainWindow && !mainWindow.isDestroyed()) {
+          loadServer();
+        }
+      }, 1000);
+    };
+
+    const loadServer = () => {
+      mainWindow.loadURL(devServerUrl).catch((err) => {
+        console.log(`[Dev] Waiting for dev server at ${devServerUrl}... (${err.code || err.message})`);
+        scheduleRetry();
+      });
+    };
+
+    mainWindow.webContents.on('did-finish-load', () => {
+      isLoaded = true;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    });
+
+    mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+      if (!isLoaded) {
+        console.log(`[Dev] Load failed (${errorDescription || errorCode}), retrying...`);
+        scheduleRetry();
+      }
+    });
+
+    mainWindow.on('closed', () => {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      mainWindow = null;
+    });
+
+    loadServer();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
+  }
 }
 
 // Ensure single instance lock
