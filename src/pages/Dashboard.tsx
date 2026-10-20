@@ -51,10 +51,11 @@ export function Dashboard() {
 
   const stats = useMemo(() => {
     const monthBills = bills.filter((bill) => monthInputValue(bill.billing_month) === monthKey);
-    const collectedThisMonth = payments.
-    filter((payment) => (payment.payment_date ?? '') >= firstOfCurrentMonth()).
-    reduce((sum, payment) => sum + toNumber(payment.amount), 0);
-    const occupied = rooms.filter((room) => room.status === 'occupied').length;
+    const collectedThisMonth = payments
+      .filter((payment) => (payment.payment_date ?? '') >= firstOfCurrentMonth())
+      .reduce((sum, payment) => sum + toNumber(payment.amount), 0);
+    const occupiedRoomIds = new Set(leases.filter((lease) => lease.is_active).map((lease) => lease.room));
+    const occupied = rooms.filter((room) => occupiedRoomIds.has(room.id)).length;
     return {
       overdueTotal: overdueRows.reduce((sum, row) => sum + toNumber(row.owed), 0),
       overdueCount: overdueRows.length,

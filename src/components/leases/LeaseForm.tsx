@@ -92,7 +92,7 @@ export function LeaseForm({
     [activeLeases, lease]
   );
 
-  const availableRooms = rooms.filter((room) => !takenRoomIds.has(room.id) && room.status !== 'maintenance');
+  const availableRooms = rooms.filter((room) => !takenRoomIds.has(room.id));
   const availableCustomers = customers.filter((customer) => !takenCustomerIds.has(customer.id));
 
   const handleRoomChange = (roomId: string) => {

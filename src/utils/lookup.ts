@@ -1,4 +1,4 @@
-import type { Bill, BillStatus, Customer, ID, Lease, Room } from '../types';
+import type { Bill, BillStatus, Customer, ID, Lease, Room, RoomStatus } from '../types';
 
 export function mapById<T extends {id: ID;}>(items: T[]): Map<ID, T> {
   return new Map(items.map((item) => [item.id, item]));
@@ -87,4 +87,16 @@ export function billStatus(bill: Bill): BillStatus {
   if (total > 0 && paid >= total) return 'paid';
   if (paid > 0) return 'partial';
   return 'unpaid';
+}
+
+/**
+ * Rooms do not carry a `status` field on the API — occupancy is derived from
+ * whether there is an active lease assigned to the room.
+ */
+export function roomStatus(room: Room | ID, activeLeasesOrIds: Lease[] | Set<ID>): RoomStatus {
+  const id = typeof room === 'number' ? room : room.id;
+  if (activeLeasesOrIds instanceof Set) {
+    return activeLeasesOrIds.has(id) ? 'occupied' : 'vacant';
+  }
+  return activeLeasesOrIds.some((lease) => lease.room === id && lease.is_active) ? 'occupied' : 'vacant';
 }

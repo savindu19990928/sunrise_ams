@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { roomTypes } from '../../data/roomTypes';
-import type { Room, RoomStatus, RoomType } from '../../types';
+import type { Room, RoomType } from '../../types';
 import { toNumber } from '../../utils/format';
 import type { ApiError } from '../../utils/api';
 import { Field, Input, Select, Textarea } from '../ui/Field';
@@ -22,8 +22,6 @@ function normalizeRoomType(value: string | undefined): RoomType {
   return roomTypes.some((type) => type.value === lower) ? lower as RoomType : 'single';
 }
 
-const statuses: RoomStatus[] = ['vacant', 'occupied', 'maintenance'];
-
 interface FormState {
   room_number: string;
   room_type: RoomType;
@@ -32,7 +30,6 @@ interface FormState {
   monthly_deposit_deduction: string;
   electricity_unit_price: string;
   water_unit_price: string;
-  status: RoomStatus;
   notes: string;
 }
 
@@ -44,7 +41,6 @@ const emptyState: FormState = {
   monthly_deposit_deduction: '',
   electricity_unit_price: '',
   water_unit_price: '',
-  status: 'vacant',
   notes: ''
 };
 
@@ -67,7 +63,6 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
         monthly_deposit_deduction: String(room.monthly_deposit_deduction ?? ''),
         electricity_unit_price: String(room.electricity_unit_price ?? ''),
         water_unit_price: String(room.water_unit_price ?? ''),
-        status: room.status ?? 'vacant',
         notes: room.notes ?? ''
       } :
       emptyState
@@ -92,7 +87,6 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
         monthly_deposit_deduction: toNumber(form.monthly_deposit_deduction),
         electricity_unit_price: form.electricity_unit_price === '' ? null : toNumber(form.electricity_unit_price),
         water_unit_price: form.water_unit_price === '' ? null : toNumber(form.water_unit_price),
-        status: form.status,
         notes: form.notes.trim()
       },
       applyToLease
@@ -169,15 +163,6 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
             onChange={set('water_unit_price')}
             placeholder="40" />
           
-        </Field>
-        <Field label="Status" htmlFor="status">
-          <Select id="status" value={form.status} onChange={set('status')}>
-            {statuses.map((status) =>
-            <option key={status} value={status}>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </option>
-            )}
-          </Select>
         </Field>
       </div>
       <Field label="Notes" htmlFor="notes" hint="Optional — visible to staff only.">

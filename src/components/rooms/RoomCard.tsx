@@ -1,6 +1,6 @@
 import React from 'react';
 import { PencilIcon, Trash2Icon } from 'lucide-react';
-import type { Room } from '../../types';
+import type { Room, RoomStatus } from '../../types';
 import { formatCurrency, titleCase } from '../../utils/format';
 import { Badge, type BadgeTone } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -13,20 +13,27 @@ const statusTone: Record<string, BadgeTone> = {
 
 interface RoomCardProps {
   room: Room;
+  status?: RoomStatus;
+  tenantName?: string | null;
   onEdit: (room: Room) => void;
   onDelete: (room: Room) => void;
 }
 
-export function RoomCard({ room, onEdit, onDelete }: RoomCardProps) {
+export function RoomCard({ room, status, tenantName, onEdit, onDelete }: RoomCardProps) {
+  const currentStatus: RoomStatus = status ?? room.status ?? 'vacant';
+
   return (
     <article className="flex flex-col rounded-xl border border-line bg-surface p-4 shadow-card transition-[border-color] duration-150 ease-out hover:border-brand-200">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-[0.08em] text-ink-soft">Room</p>
           <p className="text-[26px] font-semibold leading-tight tracking-[-0.02em] text-ink">{room.room_number}</p>
-          <p className="mt-0.5 text-[13px] text-ink-muted">{room.room_type ? titleCase(String(room.room_type)) : 'Unspecified type'}</p>
+          <p className="mt-0.5 text-[13px] text-ink-muted">
+            {room.room_type ? titleCase(String(room.room_type)) : 'Unspecified type'}
+            {tenantName && currentStatus === 'occupied' ? ` · Leased to ${tenantName}` : ''}
+          </p>
         </div>
-        <Badge tone={statusTone[room.status ?? 'vacant'] ?? 'neutral'}>{titleCase(room.status ?? 'vacant')}</Badge>
+        <Badge tone={statusTone[currentStatus] ?? 'neutral'}>{titleCase(currentStatus)}</Badge>
       </div>
 
       <dl className="mt-4 space-y-2 border-t border-line pt-3 text-[13px]">

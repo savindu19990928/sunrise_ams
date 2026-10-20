@@ -14,12 +14,15 @@ export interface Room {
   electricity_unit_price?: number;
   /** Price charged per water unit for this specific room. */
   water_unit_price?: number;
-  /** Optional — the API may omit it, so always guard before reading. */
+  /**
+   * The API does not provide a status field for rooms.
+   * In the UI, status is derived from whether the room has an active lease.
+   */
   status?: RoomStatus;
   notes?: string;
 }
 
-export type RoomStatus = 'vacant' | 'occupied' | 'maintenance';
+export type RoomStatus = 'vacant' | 'occupied';
 
 export interface ImmediateContact {
   id: ID;
