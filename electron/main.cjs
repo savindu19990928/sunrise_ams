@@ -36,7 +36,7 @@ function createWindow() {
   });
 
   if (isDev) {
-    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:57832';
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:5173';
     let isLoaded = false;
     let retryTimer = null;
 
@@ -82,7 +82,13 @@ function createWindow() {
 
     loadServer();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+      console.error(`[Renderer Failed Load] code: ${errorCode}, desc: ${errorDescription}, url: ${validatedURL}`);
+    });
+
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html')).catch((err) => {
+      console.error('[loadFile error]', err);
+    });
 
     mainWindow.on('closed', () => {
       mainWindow = null;

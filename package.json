@@ -7,9 +7,9 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development concurrently -k \"vite\" \"wait-on tcp:127.0.0.1:57832 && electron .\"",
+    "dev": "cross-env NODE_ENV=development concurrently -k \"vite\" \"wait-on tcp:127.0.0.1:5173 && electron .\"",
     "dev:web": "vite",
-    "dev:electron": "cross-env NODE_ENV=development concurrently -k \"vite\" \"wait-on tcp:127.0.0.1:57832 && electron .\"",
+    "dev:electron": "cross-env NODE_ENV=development concurrently -k \"vite\" \"wait-on tcp:127.0.0.1:5173 && electron .\"",
     "dev:electron:standalone": "cross-env NODE_ENV=development electron .",
     "build": "vite build",
     "electron:start": "cross-env NODE_ENV=production electron .",
