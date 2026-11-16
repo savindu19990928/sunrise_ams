@@ -22,6 +22,8 @@ interface GenerateResponse {
 
 export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms }: GenerateBillsModalProps) {
   const [month, setMonth] = useState(monthInputValue(firstOfCurrentMonth()));
+  const [regenerate, setRegenerate] = useState(false);
+  const [reason, setReason] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
@@ -29,6 +31,8 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
   useEffect(() => {
     if (!open) return;
     setMonth(monthInputValue(firstOfCurrentMonth()));
+    setRegenerate(false);
+    setReason('');
     setError(null);
     setResult(null);
   }, [open]);
@@ -40,12 +44,15 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
     setPending(true);
     setError(null);
     try {
-      const response = await apiRequest<GenerateResponse>('/api/bills/generate_monthly/', {
+      const endpoint = regenerate ? '/api/bills/regenerate-monthly/' : '/api/bills/generate_monthly/';
+      const body: Record<string, unknown> = { billing_month: billingMonth };
+      if (regenerate && reason.trim()) body.reason = reason.trim();
+      const response = await apiRequest<GenerateResponse>(endpoint, {
         method: 'POST',
-        body: { billing_month: billingMonth }
+        body
       });
       setResult(response ?? {});
-      toast.success(response?.message ?? 'Bills generated.');
+      toast.success(response?.message ?? (regenerate ? 'Bills regenerated.' : 'Bills generated.'));
       onDone();
     } catch (err) {
       const apiError = err instanceof ApiError ? err : new ApiError((err as Error).message, 0, 'http');
@@ -61,9 +68,6 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
       open={open}
       onClose={onClose}
       title={result ? 'Bills generated' : 'Generate monthly bills'}
-      description={
-      result ? undefined : 'One bill per active lease. Rent payable is rent less the deposit deduction (full rent once the deposit reaches the lease\u2019s minimum threshold). Electricity and water are shown for reference — tenants pay those to the supplier.'
-      }
       size="md"
       footer={
       result ?
@@ -99,24 +103,38 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
               {error.message}
             </div>
         }
-          <Field label="Billing month" htmlFor="billing_month" required hint={`Sent as ${billingMonth}.`}>
+          <Field label="Billing month" htmlFor="billing_month" required>
             <Input id="billing_month" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
           </Field>
+
+          <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-line bg-subtle px-3 py-2.5">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-brand-600"
+              checked={regenerate}
+              onChange={(event) => setRegenerate(event.target.checked)} />
+            <span className="text-[13px] font-medium text-ink">Regenerate / recorrect existing bills</span>
+          </label>
+
+          {regenerate &&
+          <Field label="Recorrection reason" htmlFor="bill_recorrection_reason">
+              <Input
+                id="bill_recorrection_reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Reason" />
+            </Field>
+          }
 
           {missing.length > 0 &&
         <div className="flex items-start gap-2.5 rounded-lg border border-warn-100 bg-warn-50 px-3 py-2.5 text-[13px] leading-relaxed text-warn-700">
               <InfoIcon className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
               <span>
-                No utility record yet for {formatMonth(billingMonth)} in room{missing.length > 1 ? 's' : ''}{' '}
-                <span className="font-semibold">{missing.join(', ')}</span>. Those bills will show zero utilities until
-                you enter the readings.
+                Missing utility readings for {formatMonth(billingMonth)}: room{missing.length > 1 ? 's' : ''}{' '}
+                <span className="font-semibold">{missing.join(', ')}</span>.
               </span>
             </div>
         }
-
-          <p className="text-[12px] leading-relaxed text-ink-soft">
-            Running this twice for the same month will not duplicate bills for leases that already have one.
-          </p>
         </div>
       }
     </Modal>);

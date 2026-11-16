@@ -8,7 +8,7 @@ type Json = Record<string, unknown>;
 type Alias = [uiKey: string, apiKey: string];
 
 const RESOURCE_ALIASES: Record<string, Alias[]> = {
-  rooms: [['base_deposit', 'base_deposit_amount']],
+  rooms: [['notes', 'note']],
   leases: [
   ['is_active', 'active'],
   ['deposit_paid', 'initial_deposit']],

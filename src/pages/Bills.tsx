@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { BanknoteIcon, DownloadIcon, EyeIcon, ReceiptTextIcon, SparklesIcon, Trash2Icon } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { BanknoteIcon, ClipboardListIcon, DownloadIcon, EyeIcon, ReceiptTextIcon, SparklesIcon, Trash2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Bill, UtilityRecord } from '../types';
 import { useBillingData } from '../hooks/useBillingData';
@@ -162,6 +162,12 @@ export function Bills() {
         description="One bill per lease each month. Tenants pay rent less the deposit deduction here; electricity and water are shown for reference and paid directly to the supplier."
         actions={
         <>
+            <Link
+              to="/reports?type=recorrection-logs"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:bg-canvas">
+              <ClipboardListIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+              Audit log
+            </Link>
             <Button
             variant="secondary"
             icon={BanknoteIcon}
@@ -321,7 +327,7 @@ export function Bills() {
       <ConfirmDialog
         open={Boolean(deleting)}
         title={`Delete bill #${deleting?.id ?? ''}?`}
-        message="Payments already recorded against this bill may prevent deletion on the server."
+        message="Payments already recorded against this bill may prevent deletion."
         confirmLabel="Delete bill"
         danger
         pending={crud.pending}

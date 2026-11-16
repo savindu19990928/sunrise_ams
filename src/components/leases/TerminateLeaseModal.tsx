@@ -204,7 +204,7 @@ export function TerminateLeaseModal({ open, lease, threshold = 0, onClose, onDon
           <p className="text-[13px] text-ink-soft">Checking repairs…</p> :
           repairsError ?
           <p className="text-[13px] text-warn-700">
-                Couldn't load logged repairs. The server will still deduct them when the lease is terminated.
+                Couldn&apos;t load logged repairs. Existing repairs will still be deducted when the lease is terminated.
               </p> :
           loggedRepairs.length === 0 ?
           <p className="text-[13px] text-ink-soft">No outstanding repairs on this lease.</p> :
@@ -253,8 +253,8 @@ export function TerminateLeaseModal({ open, lease, threshold = 0, onClose, onDon
           </div>
           <p className="text-[12px] leading-relaxed text-ink-soft">
             {threshold > 0 ? `The ${formatCurrency(threshold)} minimum deposit held back for this customer is used for repairs first. ` : ''}
-            The server deducts every repair from the remaining deposit, marks them as settled and ends the lease. This
-            cannot be undone from the portal.
+            Every repair is deducted from the remaining deposit, marked as settled, and the lease is ended. This
+            cannot be undone.
           </p>
         </div>
       }

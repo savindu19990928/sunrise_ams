@@ -143,7 +143,7 @@ export function Leases() {
     header: 'Monthly deduction',
     align: 'right',
     render: (lease) => {
-      const threshold = leaseThreshold(lease, customerMap.get(lease.customer));
+      const threshold = leaseThreshold(lease);
       if (!lease.is_active) return <span className="text-ink-soft">—</span>;
       return <DeductionInfoCard deduction={nextDeduction(lease, threshold)} threshold={threshold} />;
     }
@@ -273,7 +273,7 @@ export function Leases() {
       <TerminateLeaseModal
         open={Boolean(terminating)}
         lease={terminating}
-        threshold={leaseThreshold(terminating, terminating ? customerMap.get(terminating.customer) : undefined)}
+        threshold={leaseThreshold(terminating)}
         onClose={() => setTerminating(null)}
         onDone={() => {
           reload();

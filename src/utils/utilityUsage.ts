@@ -41,7 +41,7 @@ meterUnits: number | string | null | undefined)
 
 /** "+15 units (7.0%)" style label for a usage difference. */
 export function formatDifference(difference: number | null, supplierUnits?: number | string | null): string {
-  if (difference === null) return 'Supplier usage not entered';
+  if (difference === null) return '—';
   if (Math.abs(difference) < 0.005) return 'Matches room meters';
   const sign = difference > 0 ? '+' : '−';
   const supplier = toNumber(supplierUnits);

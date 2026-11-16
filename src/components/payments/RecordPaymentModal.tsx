@@ -100,7 +100,6 @@ export function RecordPaymentModal({ open, bills, preselectedBillId, onClose, on
       onClose={onClose}
       onSubmit={handleSubmit}
       title="Record rent payment"
-      description="Rent only. Utility bills are paid by the tenant to the supplier and recorded on the Utilities page."
       submitLabel="Record rent payment"
       pending={pending}
       error={error}>

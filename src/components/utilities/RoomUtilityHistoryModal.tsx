@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { Room, RoomUtilityHistory, UtilityRecord } from '../../types';
+import type { Room, RoomPreviousReading, RoomUtilityHistory, UtilityRecord } from '../../types';
 import { useResource } from '../../hooks/useResource';
 import { buildQuery } from '../../utils/api';
-import { formatCurrency, formatMonth, titleCase, toNumber } from '../../utils/format';
+import { formatCurrency, formatMonth, toNumber } from '../../utils/format';
+import { formatUnits } from '../../utils/utilityUsage';
 import { ApiErrorState } from '../ui/ApiErrorState';
 import { Badge } from '../ui/Badge';
 import { type Column, DataTable } from '../ui/DataTable';
@@ -25,7 +26,9 @@ export function RoomUtilityHistoryModal({ open, rooms, initialRoomId, onClose }:
   }, [open, initialRoomId]);
 
   const path = open && roomId ? `/api/utilities/room-history/${buildQuery({ room_id: roomId })}` : null;
+  const prevPath = open && roomId ? `/api/rooms/${roomId}/previous-readings/` : null;
   const { data, loading, error, reload } = useResource<RoomUtilityHistory | UtilityRecord[]>(path);
+  const { data: prevData } = useResource<RoomPreviousReading>(prevPath);
 
   const records = useMemo<UtilityRecord[]>(() => {
     if (!data) return [];
@@ -50,7 +53,9 @@ export function RoomUtilityHistoryModal({ open, rooms, initialRoomId, onClose }:
       units={record.electricity_units}
       month={record.billing_month}
       rate={record.electricity_unit_price}
-      cost={record.electricity_cost} />
+      cost={record.electricity_cost}
+      previousReading={record.previous_electricity_meter_reading}
+      currentReading={record.electricity_meter_reading} />
 
 
   },
@@ -58,7 +63,13 @@ export function RoomUtilityHistoryModal({ open, rooms, initialRoomId, onClose }:
     key: 'water',
     header: 'Water',
     render: (record) =>
-    <UsageCell units={record.water_units} month={record.billing_month} rate={record.water_unit_price} cost={record.water_cost} />
+    <UsageCell
+      units={record.water_units}
+      month={record.billing_month}
+      rate={record.water_unit_price}
+      cost={record.water_cost}
+      previousReading={record.previous_water_meter_reading}
+      currentReading={record.water_meter_reading} />
 
   },
   {
@@ -82,25 +93,49 @@ export function RoomUtilityHistoryModal({ open, rooms, initialRoomId, onClose }:
     <Modal
       open={open}
       onClose={onClose}
-      title="Room utility history"
-      description={
-      selectedRoom ?
-      `Room ${selectedRoom.room_number}${selectedRoom.room_type ? ` · ${titleCase(selectedRoom.room_type)}` : ''} · usage with average per day for each month` :
-      'Select a room to see its month-by-month usage.'
-      }
+      title={selectedRoom ? `Room ${selectedRoom.room_number} utility history` : 'Room utility history'}
       size="lg">
       
       <div className="space-y-4">
-        <Field label="Room" htmlFor="history_room" className="sm:w-64">
-          <Select id="history_room" value={roomId} onChange={(event) => setRoomId(event.target.value)}>
-            <option value="">Select room…</option>
-            {rooms.map((room) =>
-            <option key={room.id} value={room.id}>
-                Room {room.room_number}
-              </option>
-            )}
-          </Select>
-        </Field>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <Field label="Room" htmlFor="history_room" className="sm:w-64">
+            <Select id="history_room" value={roomId} onChange={(event) => setRoomId(event.target.value)}>
+              <option value="">Select room…</option>
+              {rooms.map((room) =>
+              <option key={room.id} value={room.id}>
+                  Room {room.room_number}
+                </option>
+              )}
+            </Select>
+          </Field>
+
+          {roomId && prevData && (prevData.previous_electricity_meter_reading !== null || prevData.previous_water_meter_reading !== null) &&
+          <div className="flex flex-wrap gap-4 rounded-lg border border-line bg-subtle px-3.5 py-2 text-[12px]">
+              <div>
+                <span className="text-ink-soft">Latest electricity meter: </span>
+                <span className="font-semibold text-ink">
+                  {prevData.previous_electricity_meter_reading !== null && prevData.previous_electricity_meter_reading !== undefined ?
+                  formatUnits(prevData.previous_electricity_meter_reading) :
+                  '—'}
+                </span>
+                {prevData.last_electricity_billing_month &&
+                <span className="ml-1 text-ink-muted">({formatMonth(prevData.last_electricity_billing_month)})</span>
+                }
+              </div>
+              <div>
+                <span className="text-ink-soft">Latest water meter: </span>
+                <span className="font-semibold text-ink">
+                  {prevData.previous_water_meter_reading !== null && prevData.previous_water_meter_reading !== undefined ?
+                  formatUnits(prevData.previous_water_meter_reading) :
+                  '—'}
+                </span>
+                {prevData.last_water_billing_month &&
+                <span className="ml-1 text-ink-muted">({formatMonth(prevData.last_water_billing_month)})</span>
+                }
+              </div>
+            </div>
+          }
+        </div>
         {roomId && (
         error ?
         <ApiErrorState error={error} onRetry={reload} /> :
@@ -112,7 +147,7 @@ export function RoomUtilityHistoryModal({ open, rooms, initialRoomId, onClose }:
             keyOf={(record) => record.id}
             loading={loading}
             emptyTitle="No utility records for this room"
-            emptyDescription="Records appear once a building bill includes this room's usage." />
+            emptyDescription="Records appear once a building bill includes this room's meter readings." />
           
             </div>)
         }

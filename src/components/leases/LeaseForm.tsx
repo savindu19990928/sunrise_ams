@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { Customer, Lease, Room } from '../../types';
 import type { ApiError } from '../../utils/api';
 import { formatCurrency, titleCase, toNumber, today } from '../../utils/format';
-import { customerName, depositThreshold } from '../../utils/lookup';
+import { customerName } from '../../utils/lookup';
 import { Field, Input, Select } from '../ui/Field';
 import { FormModal } from '../ui/FormModal';
 
@@ -25,9 +25,7 @@ interface FormState {
   base_rent_fee: string;
   base_deposit: string;
   minimum_deposit_threshold: string;
-  deposit_paid: string;
   rent_fee: string;
-  monthly_deposit_deduction: string;
 }
 
 const emptyState: FormState = {
@@ -37,9 +35,7 @@ const emptyState: FormState = {
   base_rent_fee: '',
   base_deposit: '',
   minimum_deposit_threshold: '',
-  deposit_paid: '',
-  rent_fee: '',
-  monthly_deposit_deduction: ''
+  rent_fee: ''
 };
 
 function asInput(value: number | string | null | undefined): string {
@@ -67,17 +63,14 @@ export function LeaseForm({
       setForm({ ...emptyState, start_date: today() });
       return;
     }
-    const customer = customers.find((item) => item.id === lease.customer);
     setForm({
       customer: String(lease.customer),
       room: String(lease.room),
       start_date: lease.start_date ?? today(),
       base_rent_fee: asInput(lease.base_rent_fee ?? lease.rent_fee),
       base_deposit: asInput(lease.base_deposit ?? lease.deposit_paid),
-      minimum_deposit_threshold: asInput(lease.minimum_deposit_threshold ?? customer?.minimum_deposit_threshold),
-      deposit_paid: asInput(lease.deposit_paid),
-      rent_fee: asInput(lease.rent_fee),
-      monthly_deposit_deduction: asInput(lease.monthly_deposit_deduction)
+      minimum_deposit_threshold: asInput(lease.minimum_deposit_threshold),
+      rent_fee: asInput(lease.rent_fee)
     });
     // Only re-seed when the dialog opens or the lease changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,35 +89,23 @@ export function LeaseForm({
   const availableCustomers = customers.filter((customer) => !takenCustomerIds.has(customer.id));
 
   const handleRoomChange = (roomId: string) => {
-    const room = rooms.find((item) => String(item.id) === roomId);
-    setForm((prev) => ({
-      ...prev,
-      room: roomId,
-      base_rent_fee: room ? asInput(room.base_rent_fee) : prev.base_rent_fee,
-      base_deposit: room ? asInput(room.base_deposit) : prev.base_deposit,
-      rent_fee: room ? asInput(room.base_rent_fee) : prev.rent_fee,
-      deposit_paid: room && !lease ? asInput(room.base_deposit) : prev.deposit_paid,
-      monthly_deposit_deduction: room ? asInput(room.monthly_deposit_deduction) : prev.monthly_deposit_deduction
-    }));
+    setForm((prev) => ({ ...prev, room: roomId }));
   };
 
   const handleCustomerChange = (customerId: string) => {
-    const customer = customers.find((item) => String(item.id) === customerId);
-    setForm((prev) => ({
-      ...prev,
-      customer: customerId,
-      minimum_deposit_threshold:
-      prev.minimum_deposit_threshold === '' && customer ? asInput(depositThreshold(customer)) : prev.minimum_deposit_threshold
-    }));
+    setForm((prev) => ({ ...prev, customer: customerId }));
   };
 
   const set = (key: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
   setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
+  const baseRent = toNumber(form.base_rent_fee);
+  const monthlyRent = form.rent_fee === '' ? baseRent : toNumber(form.rent_fee);
+  const derivedDeduction = Math.max(0, baseRent - monthlyRent);
+  const depositPaid = toNumber(form.base_deposit);
   const threshold = toNumber(form.minimum_deposit_threshold);
-  const deductible = Math.max(0, toNumber(form.deposit_paid) - threshold);
-  const monthsCovered =
-  toNumber(form.monthly_deposit_deduction) > 0 ? Math.ceil(deductible / toNumber(form.monthly_deposit_deduction)) : 0;
+  const deductible = Math.max(0, depositPaid - threshold);
+  const monthsCovered = derivedDeduction > 0 ? Math.ceil(deductible / derivedDeduction) : 0;
 
   const handleSubmit = () => {
     setTouched(true);
@@ -133,15 +114,15 @@ export function LeaseForm({
       customer: toNumber(form.customer),
       room: toNumber(form.room),
       start_date: form.start_date,
-      base_rent_fee: toNumber(form.base_rent_fee).toFixed(2),
-      base_deposit: toNumber(form.base_deposit).toFixed(2),
-      minimum_deposit_threshold: toNumber(form.minimum_deposit_threshold).toFixed(2),
-      deposit_paid: toNumber(form.deposit_paid),
-      rent_fee: toNumber(form.rent_fee),
-      monthly_deposit_deduction: toNumber(form.monthly_deposit_deduction)
+      base_rent_fee: baseRent.toFixed(2),
+      base_deposit: depositPaid.toFixed(2),
+      minimum_deposit_threshold: threshold.toFixed(2),
+      deposit_paid: depositPaid,
+      rent_fee: monthlyRent,
+      monthly_deposit_deduction: derivedDeduction
     };
     if (!lease) {
-      payload.current_deposit_balance = toNumber(form.deposit_paid);
+      payload.current_deposit_balance = depositPaid;
       payload.is_active = true;
     }
     onSubmit(payload);
@@ -153,7 +134,6 @@ export function LeaseForm({
       onClose={onClose}
       onSubmit={handleSubmit}
       title={lease ? `Edit lease #${lease.id}` : 'Assign room to customer'}
-      description="The lease records the agreed base rent, base deposit and minimum deposit threshold. Each month the tenant pays rent minus the deduction until the deposit falls to the threshold, then the full rent."
       submitLabel={lease ? 'Save changes' : 'Create lease'}
       pending={pending}
       error={error}>
@@ -185,7 +165,7 @@ export function LeaseForm({
             <option value="">Select room…</option>
             {availableRooms.map((room) =>
             <option key={room.id} value={room.id}>
-                Room {room.room_number} · {titleCase(String(room.room_type ?? ''))} · {formatCurrency(room.base_rent_fee)}
+                Room {room.room_number} · {titleCase(String(room.room_type ?? ''))}
               </option>
             )}
           </Select>
@@ -196,12 +176,18 @@ export function LeaseForm({
       </div>
 
       <fieldset className="border-t border-line pt-4">
-        <legend className="pr-2 text-[13px] font-medium text-ink">Agreement baseline</legend>
-        <div className="mt-2 grid gap-4 sm:grid-cols-3">
-          <Field label="Base rent fee" htmlFor="lease_base_rent" hint="From the room.">
+        <legend className="pr-2 text-[13px] font-medium text-ink">Agreement &amp; rent terms</legend>
+        <div className="mt-2 grid gap-4 sm:grid-cols-2">
+          <Field label="Base rent fee" htmlFor="lease_base_rent">
             <Input id="lease_base_rent" type="number" min="0" step="0.01" value={form.base_rent_fee} onChange={set('base_rent_fee')} />
           </Field>
-          <Field label="Base deposit" htmlFor="lease_base_deposit" hint="From the room.">
+          <Field
+            label="Monthly rent fee"
+            htmlFor="lease_rent"
+            hint={`Monthly deduction: ${formatCurrency(derivedDeduction)}`}>
+            <Input id="lease_rent" type="number" min="0" step="0.01" value={form.rent_fee} onChange={set('rent_fee')} />
+          </Field>
+          <Field label="Base deposit" htmlFor="lease_base_deposit">
             <Input
               id="lease_base_deposit"
               type="number"
@@ -211,7 +197,7 @@ export function LeaseForm({
               onChange={set('base_deposit')} />
             
           </Field>
-          <Field label="Minimum deposit threshold" htmlFor="lease_threshold" hint="Deductions stop here.">
+          <Field label="Minimum deposit threshold" htmlFor="lease_threshold">
             <Input
               id="lease_threshold"
               type="number"
@@ -224,41 +210,21 @@ export function LeaseForm({
         </div>
       </fieldset>
 
-      <fieldset className="border-t border-line pt-4">
-        <legend className="pr-2 text-[13px] font-medium text-ink">Payments</legend>
-        <div className="mt-2 grid gap-4 sm:grid-cols-3">
-          <Field label="Deposit paid" htmlFor="lease_deposit">
-            <Input id="lease_deposit" type="number" min="0" step="0.01" value={form.deposit_paid} onChange={set('deposit_paid')} />
-          </Field>
-          <Field label="Monthly rent fee" htmlFor="lease_rent">
-            <Input id="lease_rent" type="number" min="0" step="0.01" value={form.rent_fee} onChange={set('rent_fee')} />
-          </Field>
-          <Field label="Monthly deduction" htmlFor="lease_deduction">
-            <Input
-              id="lease_deduction"
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.monthly_deposit_deduction}
-              onChange={set('monthly_deposit_deduction')} />
-            
-          </Field>
-        </div>
-      </fieldset>
-
       {monthsCovered > 0 &&
       <p className="rounded-lg border border-brand-100 bg-brand-50 px-3 py-2.5 text-[13px] leading-relaxed text-brand-700">
           Tenant pays{' '}
           <span className="font-semibold">
-            {formatCurrency(Math.max(0, toNumber(form.rent_fee) - toNumber(form.monthly_deposit_deduction)))}
+            {formatCurrency(monthlyRent)}
           </span>{' '}
-          rent for about <span className="font-semibold">{monthsCovered} months</span>. Once the deposit reaches the
-          lease threshold of <span className="font-semibold">{formatCurrency(threshold)}</span> the deduction stops and
-          the full rent of <span className="font-semibold">{formatCurrency(form.rent_fee)}</span> applies. The threshold
-          amount is kept to cover repairs at move-out.
+          rent per month (deducting <span className="font-semibold">{formatCurrency(derivedDeduction)}</span> from the{' '}
+          <span className="font-semibold">{formatCurrency(depositPaid)}</span> deposit) for about{' '}
+          <span className="font-semibold">{monthsCovered} months</span>. Once the deposit reaches the lease threshold of{' '}
+          <span className="font-semibold">{formatCurrency(threshold)}</span> the deduction stops and the full base rent
+          of <span className="font-semibold">{formatCurrency(baseRent)}</span> applies. The threshold amount is kept to
+          cover repairs at move-out.
         </p>
       }
-      {form.customer && toNumber(form.deposit_paid) > 0 && deductible <= 0 &&
+      {form.customer && depositPaid > 0 && deductible <= 0 &&
       <p className="rounded-lg border border-warn-100 bg-warn-50 px-3 py-2.5 text-[13px] leading-relaxed text-warn-700">
           The deposit is at or below the lease&apos;s minimum threshold of {formatCurrency(threshold)}, so no monthly
           deduction will be taken — the full rent applies from the first bill.

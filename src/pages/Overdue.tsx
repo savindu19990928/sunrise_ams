@@ -65,7 +65,7 @@ export function Overdue() {
     <div className="space-y-5">
       <PageHeader
         title="Overdue payments"
-        description="Bills past their due date with an outstanding balance, straight from the server's overdue check."
+        description="Bills past their due date with an outstanding balance."
         actions={
         <Button variant="secondary" icon={RefreshCwIcon} onClick={reload}>
             Refresh

@@ -39,19 +39,19 @@ function UtilityRate({
       </p>
       <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-2.5 text-[12px]">
         <div className="min-w-0">
-          <dt className="text-ink-soft">Supplier</dt>
+          <dt className="text-ink-soft">Meter reading</dt>
           <dd className="truncate font-medium text-ink">
-            {supplierUnits === null || supplierUnits === undefined ? '—' : `${formatUnits(supplierUnits)} u`}
+            {supplierUnits === null || supplierUnits === undefined ? '—' : `${formatUnits(supplierUnits)}`}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-ink-soft">Room meters</dt>
+          <dt className="text-ink-soft">Room units</dt>
           <dd className="truncate font-medium text-ink">{formatUnits(units)} u</dd>
         </div>
         <div className="min-w-0">
           <dt className="text-ink-soft">Difference</dt>
           <dd className={`truncate font-medium ${tone}`}>
-            {difference === null ? 'Not entered' : formatDifference(difference, supplierUnits)}
+            {difference === null ? '—' : formatDifference(difference, supplierUnits)}
           </dd>
         </div>
       </dl>
@@ -69,10 +69,7 @@ export function BuildingBillSummary({ month, bill, roomsRecorded, totalRoomsCost
     return (
       <div className="flex flex-col gap-3 rounded-xl border border-dashed border-line bg-surface px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink">No building bill entered for {formatMonth(month)}</p>
-          <p className="mt-0.5 text-[13px] text-ink-muted">
-            Enter the supplier totals and each room&apos;s usage to calculate this month&apos;s per-unit prices.
-          </p>
+          <p className="text-sm font-medium text-ink">No building bill for {formatMonth(month)}</p>
         </div>
         <Button icon={ReceiptTextIcon} onClick={onEnter} className="flex-none">
           Enter building bill

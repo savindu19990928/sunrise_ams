@@ -1,7 +1,7 @@
 import type { AuthUser, TokenPair } from '../types';
 import { normalizeRequestBody, normalizeResponse } from './normalize';
 
-const API_BASE_URL = 'https://thiranda.devrious.lk';
+const API_BASE_URL = 'http://127.0.0.1:8000';
 
 export type ApiErrorKind = 'network' | 'auth' | 'validation' | 'http';
 
@@ -130,7 +130,8 @@ function buildErrorMessage(status: number, payload: unknown): { message: string;
     if (parts.length) return { message: parts.join(' • '), fieldErrors };
   }
   if (typeof payload === 'string' && payload.trim()) return { message: payload.slice(0, 200) };
-  return { message: `Request failed with status ${status}.` };
+  if (status >= 500) return { message: 'Something went wrong. Please try again shortly.' };
+  return { message: 'Unable to complete the request. Please try again.' };
 }
 
 async function refreshAccessToken(): Promise<boolean> {
@@ -169,7 +170,7 @@ async function request<T>(path: string, options: RequestOptions, retrying = fals
   } catch (error) {
     if ((error as Error).name === 'AbortError') throw error;
     throw new ApiError(
-      'Unable to connect to the server right now. Check your internet connection and try again.',
+      'Unable to connect right now. Check your connection and try again.',
       0,
       'network'
     );

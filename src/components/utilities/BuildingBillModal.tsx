@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { ID, Lease, MonthlyUtilitySummary, Room } from '../../types';
-import type { ApiError } from '../../utils/api';
+import type { ID, Lease, MonthlyUtilitySummary, Room, RoomPreviousReading } from '../../types';
+import { type ApiError, apiList, apiRequest, buildQuery } from '../../utils/api';
 import { formatCurrency, formatMonth, toNumber } from '../../utils/format';
 import { formatDifference, formatPerDay, formatUnits, usageDifference } from '../../utils/utilityUsage';
 import { Field, Input } from '../ui/Field';
@@ -25,15 +25,49 @@ function DifferenceLine({ supplier, meters, difference }: {supplier: string;mete
   difference === null ? 'text-ink-soft' : Math.abs(difference) < 0.005 ? 'text-success-700' : 'text-warn-700';
   return (
     <p className="mt-2 border-t border-line pt-2 text-[12px] text-ink-muted">
-      Supplier {supplier === '' ? '—' : `${formatUnits(supplier)} units`} · meters {formatUnits(meters)} units ·{' '}
+      Meter {supplier === '' ? '—' : `${formatUnits(supplier)}`} · rooms {formatUnits(meters)} ·{' '}
       <span className={`font-medium ${tone}`}>{formatDifference(difference, supplier)}</span>
     </p>);
 
 }
 
-interface UsageDraft {
-  electricity: string;
-  water: string;
+interface RoomReadingDraft {
+  currElectricity: string;
+  currWater: string;
+  customRateEnabled: boolean;
+  customElectricityRate: string;
+  customWaterRate: string;
+}
+
+const emptyDraft: RoomReadingDraft = {
+  currElectricity: '',
+  currWater: '',
+  customRateEnabled: false,
+  customElectricityRate: '',
+  customWaterRate: ''
+};
+
+function asReadingString(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '';
+  return String(toNumber(value));
+}
+
+function seedFromSummary(summary: MonthlyUtilitySummary | null): Record<string, RoomReadingDraft> {
+  const next: Record<string, RoomReadingDraft> = {};
+  const bill = summary?.building_utility_bill;
+  for (const row of summary?.rooms_utility_data ?? []) {
+    const hasCustomElec = bill && toNumber(row.electricity_unit_price) !== toNumber(bill.electricity_unit_price);
+    const hasCustomWater = bill && toNumber(row.water_unit_price) !== toNumber(bill.water_unit_price);
+    const customRateEnabled = Boolean(hasCustomElec || hasCustomWater);
+    next[String(row.room_id)] = {
+      currElectricity: asReadingString(row.electricity_meter_reading),
+      currWater: asReadingString(row.water_meter_reading),
+      customRateEnabled,
+      customElectricityRate: customRateEnabled ? asReadingString(row.electricity_unit_price) : '',
+      customWaterRate: customRateEnabled ? asReadingString(row.water_unit_price) : ''
+    };
+  }
+  return next;
 }
 
 export function BuildingBillModal({
@@ -48,39 +82,102 @@ export function BuildingBillModal({
   onSubmit
 }: BuildingBillModalProps) {
   const [month, setMonth] = useState(defaultMonth);
+  const [activeSummary, setActiveSummary] = useState<MonthlyUtilitySummary | null>(existing);
   const [dueDate, setDueDate] = useState('');
   const [electricityBill, setElectricityBill] = useState('');
   const [waterBill, setWaterBill] = useState('');
-  const [supplierElectricity, setSupplierElectricity] = useState('');
-  const [supplierWater, setSupplierWater] = useState('');
-  const [usages, setUsages] = useState<Record<string, UsageDraft>>({});
+  const [buildingElectricityReading, setBuildingElectricityReading] = useState('');
+  const [buildingWaterReading, setBuildingWaterReading] = useState('');
+  const [readings, setReadings] = useState<Record<string, RoomReadingDraft>>({});
+  const [prevMap, setPrevMap] = useState<Record<string, {elec: number;water: number;}>>({});
+  const [prevReadingsLoading, setPrevReadingsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    setTouched(false);
-    setMonth(defaultMonth);
-    const bill = existing?.building_utility_bill;
+  const applySummaryHeader = (summary: MonthlyUtilitySummary | null, targetMonth: string) => {
+    const bill = summary?.building_utility_bill;
+    setActiveSummary(summary);
     setElectricityBill(bill ? String(toNumber(bill.total_electricity_bill)) : '');
     setWaterBill(bill ? String(toNumber(bill.total_water_bill)) : '');
-    setSupplierElectricity(
+    setBuildingElectricityReading(
       bill?.supplier_electricity_units !== undefined && bill?.supplier_electricity_units !== null ?
       String(toNumber(bill.supplier_electricity_units)) :
       ''
     );
-    setSupplierWater(
-      bill?.supplier_water_units !== undefined && bill?.supplier_water_units !== null ? String(toNumber(bill.supplier_water_units)) : ''
+    setBuildingWaterReading(
+      bill?.supplier_water_units !== undefined && bill?.supplier_water_units !== null ?
+      String(toNumber(bill.supplier_water_units)) :
+      ''
     );
-    setDueDate(bill?.due_date ?? `${defaultMonth}-25`);
-    const next: Record<string, UsageDraft> = {};
+    setDueDate(bill?.due_date ?? `${targetMonth}-25`);
+  };
+
+  // Seed initial state when the modal opens.
+  useEffect(() => {
+    if (!open) return;
+    setTouched(false);
+    setMonth(defaultMonth);
+    applySummaryHeader(existing, defaultMonth);
+    setReadings(seedFromSummary(existing));
+    const seededPrev: Record<string, {elec: number;water: number;}> = {};
     for (const row of existing?.rooms_utility_data ?? []) {
-      next[String(row.room_id)] = {
-        electricity: String(toNumber(row.electricity_units)),
-        water: String(toNumber(row.water_units))
+      seededPrev[String(row.room_id)] = {
+        elec: toNumber(row.previous_electricity_meter_reading),
+        water: toNumber(row.previous_water_meter_reading)
       };
     }
-    setUsages(next);
+    setPrevMap(seededPrev);
   }, [open, defaultMonth, existing]);
+
+  // Fetch previous months' meter readings whenever open & month changes; fallback to 0 on failure.
+  useEffect(() => {
+    if (!open || !month || !/^\d{4}-\d{2}$/.test(month)) return;
+    const controller = new AbortController();
+    setPrevReadingsLoading(true);
+
+    const summaryPromise =
+    month === defaultMonth ?
+    Promise.resolve(existing) :
+    apiRequest<MonthlyUtilitySummary>(`/api/utilities/monthly-summary/${buildQuery({ billing_month: month })}`, {
+      signal: controller.signal
+    }).catch(() => null);
+
+    const prevPromise = apiList<RoomPreviousReading>(
+      `/api/utilities/previous-readings/${buildQuery({ billing_month: month })}`,
+      { signal: controller.signal }
+    ).catch(() => [] as RoomPreviousReading[]);
+
+    Promise.all([summaryPromise, prevPromise]).
+    then(([monthSummary, prevList]) => {
+      if (controller.signal.aborted) return;
+
+      if (month !== defaultMonth) {
+        applySummaryHeader(monthSummary, month);
+        setReadings(seedFromSummary(monthSummary));
+      }
+
+      const nextPrev: Record<string, {elec: number;water: number;}> = {};
+      for (const row of monthSummary?.rooms_utility_data ?? []) {
+        nextPrev[String(row.room_id)] = {
+          elec: toNumber(row.previous_electricity_meter_reading),
+          water: toNumber(row.previous_water_meter_reading)
+        };
+      }
+      for (const item of prevList) {
+        const key = String(item.room_id);
+        const existingPrev = nextPrev[key];
+        nextPrev[key] = {
+          elec: existingPrev ? existingPrev.elec : toNumber(item.previous_electricity_meter_reading),
+          water: existingPrev ? existingPrev.water : toNumber(item.previous_water_meter_reading)
+        };
+      }
+      setPrevMap(nextPrev);
+    }).
+    finally(() => {
+      if (!controller.signal.aborted) setPrevReadingsLoading(false);
+    });
+
+    return () => controller.abort();
+  }, [open, month, defaultMonth, existing]);
 
   const occupiedRoomIds = useMemo(
     () => new Set<ID>(leases.filter((lease) => lease.is_active).map((lease) => lease.room)),
@@ -96,32 +193,75 @@ export function BuildingBillModal({
     [rooms, occupiedRoomIds]
   );
 
-  const totals = useMemo(() => {
-    let electricity = 0;
-    let water = 0;
-    for (const usage of Object.values(usages)) {
-      electricity += toNumber(usage.electricity);
-      water += toNumber(usage.water);
+  const roomCalculations = useMemo(() => {
+    const map = new Map<
+      ID,
+      {
+        included: boolean;
+        prevElec: number;
+        prevWater: number;
+        elecUnits: number;
+        waterUnits: number;
+        elecInvalid: boolean;
+        waterInvalid: boolean;
+      }>();
+    let totalElec = 0;
+    let totalWater = 0;
+
+    for (const room of sortedRooms) {
+      const draft = readings[String(room.id)] ?? emptyDraft;
+      const prev = prevMap[String(room.id)] ?? { elec: 0, water: 0 };
+      const included = draft.currElectricity !== '' || draft.currWater !== '';
+      const hasElec = draft.currElectricity !== '';
+      const hasWater = draft.currWater !== '';
+      const elecUnits = hasElec ? toNumber(draft.currElectricity) - prev.elec : 0;
+      const waterUnits = hasWater ? toNumber(draft.currWater) - prev.water : 0;
+      const elecInvalid = hasElec && elecUnits < 0;
+      const waterInvalid = hasWater && waterUnits < 0;
+
+      if (included) {
+        if (!elecInvalid && hasElec) totalElec += elecUnits;
+        if (!waterInvalid && hasWater) totalWater += waterUnits;
+      }
+
+      map.set(room.id, {
+        included,
+        prevElec: prev.elec,
+        prevWater: prev.water,
+        elecUnits,
+        waterUnits,
+        elecInvalid,
+        waterInvalid
+      });
     }
-    return { electricity, water };
-  }, [usages]);
 
-  const electricityRate = totals.electricity > 0 ? toNumber(electricityBill) / totals.electricity : 0;
-  const waterRate = totals.water > 0 ? toNumber(waterBill) / totals.water : 0;
+    return { map, totalElec, totalWater };
+  }, [sortedRooms, readings, prevMap]);
 
-  const setUsage = (roomId: ID, key: keyof UsageDraft, value: string) =>
-  setUsages((prev) => ({
+  const defaultElectricityRate =
+  roomCalculations.totalElec > 0 ? toNumber(electricityBill) / roomCalculations.totalElec : 0;
+  const defaultWaterRate =
+  roomCalculations.totalWater > 0 ? toNumber(waterBill) / roomCalculations.totalWater : 0;
+
+  const updateRoom = (roomId: ID, patch: Partial<RoomReadingDraft>) =>
+  setReadings((prev) => ({
     ...prev,
-    [String(roomId)]: { electricity: '', water: '', ...prev[String(roomId)], [key]: value }
+    [String(roomId)]: { ...emptyDraft, ...prev[String(roomId)], ...patch }
   }));
 
-  const billError = (value: string) => value === '' ? 'Enter the supplier amount (0 if none).' : toNumber(value) < 0 ? 'Cannot be negative.' : undefined;
-  const unitsError = (value: string) =>
-  value === '' ? 'Enter the units on the supplier bill.' : toNumber(value) < 0 ? 'Cannot be negative.' : undefined;
-  const electricityUsageError = toNumber(electricityBill) > 0 && totals.electricity === 0;
-  const waterUsageError = toNumber(waterBill) > 0 && totals.water === 0;
-  const electricityDifference = usageDifference(supplierElectricity, totals.electricity);
-  const waterDifference = usageDifference(supplierWater, totals.water);
+  const billError = (value: string) =>
+  value === '' ? 'Required.' : toNumber(value) < 0 ? 'Cannot be negative.' : undefined;
+  const optionalReadingError = (value: string) =>
+  value !== '' && toNumber(value) < 0 ? 'Cannot be negative.' : undefined;
+  const electricityUsageError = toNumber(electricityBill) > 0 && roomCalculations.totalElec === 0;
+  const waterUsageError = toNumber(waterBill) > 0 && roomCalculations.totalWater === 0;
+  const hasReadingErrors = Array.from(roomCalculations.map.values()).some(
+    (calc) => calc.elecInvalid || calc.waterInvalid
+  );
+  const includedCount = Array.from(roomCalculations.map.values()).filter((calc) => calc.included).length;
+
+  const electricityDifference = usageDifference(buildingElectricityReading, roomCalculations.totalElec);
+  const waterDifference = usageDifference(buildingWaterReading, roomCalculations.totalWater);
 
   const handleSubmit = () => {
     setTouched(true);
@@ -129,56 +269,68 @@ export function BuildingBillModal({
     !month ||
     billError(electricityBill) ||
     billError(waterBill) ||
-    unitsError(supplierElectricity) ||
-    unitsError(supplierWater) ||
+    optionalReadingError(buildingElectricityReading) ||
+    optionalReadingError(buildingWaterReading) ||
     electricityUsageError ||
-    waterUsageError)
+    waterUsageError ||
+    hasReadingErrors ||
+    includedCount === 0)
+    {
+      return;
+    }
 
-    return;
-    const roomUsages = sortedRooms.
-    filter((room) => {
-      const usage = usages[String(room.id)];
-      return usage && (usage.electricity !== '' || usage.water !== '');
-    }).
-    map((room) => ({
-      room_number: room.room_number,
-      electricity_units: toNumber(usages[String(room.id)].electricity),
-      water_units: toNumber(usages[String(room.id)].water)
-    }));
-    if (!roomUsages.length) return;
-    onSubmit(
-      {
-        billing_month: `${month}-01`,
-        total_electricity_bill: toNumber(electricityBill),
-        total_water_bill: toNumber(waterBill),
-        supplier_electricity_units: toNumber(supplierElectricity),
-        supplier_water_units: toNumber(supplierWater),
-        due_date: dueDate || undefined,
-        room_usages: roomUsages
-      },
-      month
-    );
+    const roomReadings = sortedRooms.
+    filter((room) => roomCalculations.map.get(room.id)?.included).
+    map((room) => {
+      const draft = readings[String(room.id)] ?? emptyDraft;
+      const calc = roomCalculations.map.get(room.id);
+      const entry: Record<string, unknown> = {
+        room_number: room.room_number,
+        electricity_meter_reading: draft.currElectricity !== '' ? toNumber(draft.currElectricity) : calc?.prevElec ?? 0,
+        water_meter_reading: draft.currWater !== '' ? toNumber(draft.currWater) : calc?.prevWater ?? 0
+      };
+      if (draft.customRateEnabled) {
+        if (draft.customElectricityRate !== '') {
+          entry.electricity_unit_price = toNumber(draft.customElectricityRate);
+        }
+        if (draft.customWaterRate !== '') {
+          entry.water_unit_price = toNumber(draft.customWaterRate);
+        }
+      }
+      return entry;
+    });
+
+    const payload: Record<string, unknown> = {
+      billing_month: `${month}-01`,
+      total_electricity_bill: toNumber(electricityBill),
+      total_water_bill: toNumber(waterBill),
+      due_date: dueDate || undefined,
+      ...(buildingElectricityReading !== '' ? { supplier_electricity_units: toNumber(buildingElectricityReading) } : {}),
+      ...(buildingWaterReading !== '' ? { supplier_water_units: toNumber(buildingWaterReading) } : {}),
+      room_readings: roomReadings
+    };
+
+    onSubmit(payload, month);
   };
 
-  const noUsage = touched && totals.electricity === 0 && totals.water === 0;
+  const noUsage = touched && includedCount === 0;
 
   return (
     <FormModal
       open={open}
       onClose={onClose}
       onSubmit={handleSubmit}
-      title="Enter building utility bill"
-      description="Enter this month's supplier bills with the usage they state, then each room's meter usage. The per-unit price is the bill divided by the rooms' combined usage; the difference shows units the room meters didn't capture."
+      title={activeSummary?.building_utility_bill ? 'Update building utility bill' : 'Enter building utility bill'}
       submitLabel="Calculate & save"
       pending={pending}
       error={error}
       size="lg">
       
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Billing month" htmlFor="bb_month" required>
           <Input id="bb_month" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
         </Field>
-        <Field label="Supplier due date" htmlFor="bb_due">
+        <Field label="Due date" htmlFor="bb_due">
           <Input id="bb_due" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
         </Field>
       </div>
@@ -201,18 +353,17 @@ export function BuildingBillModal({
           
         </Field>
         <Field
-          label="Supplier electricity units"
+          label="Electricity meter reading"
           htmlFor="bb_supplier_electricity"
-          required
-          error={touched ? unitsError(supplierElectricity) : undefined}>
+          error={touched ? optionalReadingError(buildingElectricityReading) : undefined}>
           
           <Input
             id="bb_supplier_electricity"
             type="number"
             min="0"
             step="0.01"
-            value={supplierElectricity}
-            onChange={(event) => setSupplierElectricity(event.target.value)}
+            value={buildingElectricityReading}
+            onChange={(event) => setBuildingElectricityReading(event.target.value)}
             placeholder="215" />
           
         </Field>
@@ -228,18 +379,17 @@ export function BuildingBillModal({
           
         </Field>
         <Field
-          label="Supplier water units"
+          label="Water meter reading"
           htmlFor="bb_supplier_water"
-          required
-          error={touched ? unitsError(supplierWater) : undefined}>
+          error={touched ? optionalReadingError(buildingWaterReading) : undefined}>
           
           <Input
             id="bb_supplier_water"
             type="number"
             min="0"
             step="0.01"
-            value={supplierWater}
-            onChange={(event) => setSupplierWater(event.target.value)}
+            value={buildingWaterReading}
+            onChange={(event) => setBuildingWaterReading(event.target.value)}
             placeholder="108" />
           
         </Field>
@@ -247,49 +397,54 @@ export function BuildingBillModal({
 
       <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2">
         <div className="bg-subtle px-3.5 py-3">
-          <p className="text-[12px] text-ink-muted">Electricity price this month</p>
+          <p className="text-[12px] text-ink-muted">Default electricity rate</p>
           <p className="mt-0.5 text-lg font-semibold tracking-[-0.01em] text-ink">
-            {formatCurrency(electricityRate)} <span className="text-[13px] font-normal text-ink-muted">/ unit</span>
+            {formatCurrency(defaultElectricityRate)} <span className="text-[13px] font-normal text-ink-muted">/ unit</span>
           </p>
           <p className={`text-[12px] ${electricityUsageError && touched ? 'text-danger-600' : 'text-ink-soft'}`}>
-            {formatCurrency(electricityBill)} ÷ {formatUnits(totals.electricity)} metered units
+            {formatCurrency(electricityBill)} ÷ {formatUnits(roomCalculations.totalElec)} units
           </p>
-          <DifferenceLine supplier={supplierElectricity} meters={totals.electricity} difference={electricityDifference} />
+          <DifferenceLine supplier={buildingElectricityReading} meters={roomCalculations.totalElec} difference={electricityDifference} />
         </div>
         <div className="bg-subtle px-3.5 py-3">
-          <p className="text-[12px] text-ink-muted">Water price this month</p>
+          <p className="text-[12px] text-ink-muted">Default water rate</p>
           <p className="mt-0.5 text-lg font-semibold tracking-[-0.01em] text-ink">
-            {formatCurrency(waterRate)} <span className="text-[13px] font-normal text-ink-muted">/ unit</span>
+            {formatCurrency(defaultWaterRate)} <span className="text-[13px] font-normal text-ink-muted">/ unit</span>
           </p>
           <p className={`text-[12px] ${waterUsageError && touched ? 'text-danger-600' : 'text-ink-soft'}`}>
-            {formatCurrency(waterBill)} ÷ {formatUnits(totals.water)} metered units
+            {formatCurrency(waterBill)} ÷ {formatUnits(roomCalculations.totalWater)} units
           </p>
-          <DifferenceLine supplier={supplierWater} meters={totals.water} difference={waterDifference} />
+          <DifferenceLine supplier={buildingWaterReading} meters={roomCalculations.totalWater} difference={waterDifference} />
         </div>
       </div>
 
       <div>
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-[13px] font-medium text-ink">Room usage · {formatMonth(`${month}-01`)}</h3>
-          <p className="text-[12px] text-ink-muted">Leave a room blank to skip it</p>
+          <h3 className="text-[13px] font-medium text-ink">
+            Room meter readings · {formatMonth(`${month}-01`)}
+            {prevReadingsLoading && <span className="ml-2 text-[12px] font-normal text-ink-soft">Loading…</span>}
+          </h3>
         </div>
         {noUsage &&
         <p role="alert" className="mt-2 text-[12px] text-danger-600">
-            Enter usage for at least one room.
+            Enter meter readings for at least one room.
           </p>
         }
         <div className="mt-2 overflow-x-auto rounded-lg border border-line">
-          <table className="w-full min-w-[560px] text-[13px]">
+          <table className="w-full min-w-[620px] text-[13px]">
             <thead className="bg-subtle text-left text-[12px] text-ink-muted">
               <tr>
                 <th scope="col" className="px-3 py-2 font-medium">
                   Room
                 </th>
                 <th scope="col" className="px-3 py-2 font-medium">
-                  Electricity units
+                  Electricity meter reading
                 </th>
                 <th scope="col" className="px-3 py-2 font-medium">
-                  Water units
+                  Water meter reading
+                </th>
+                <th scope="col" className="px-3 py-2 font-medium">
+                  Rate
                 </th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">
                   Room bill
@@ -298,48 +453,125 @@ export function BuildingBillModal({
             </thead>
             <tbody className="divide-y divide-line">
               {sortedRooms.map((room) => {
-                const usage = usages[String(room.id)] ?? { electricity: '', water: '' };
-                const estimate = toNumber(usage.electricity) * electricityRate + toNumber(usage.water) * waterRate;
+                const draft = readings[String(room.id)] ?? emptyDraft;
+                const calc = roomCalculations.map.get(room.id) ?? {
+                  included: false,
+                  prevElec: 0,
+                  prevWater: 0,
+                  elecUnits: 0,
+                  waterUnits: 0,
+                  elecInvalid: false,
+                  waterInvalid: false
+                };
+                const roomElecRate =
+                draft.customRateEnabled && draft.customElectricityRate !== '' ?
+                toNumber(draft.customElectricityRate) :
+                defaultElectricityRate;
+                const roomWaterRate =
+                draft.customRateEnabled && draft.customWaterRate !== '' ?
+                toNumber(draft.customWaterRate) :
+                defaultWaterRate;
+                const estimate =
+                (draft.currElectricity !== '' && !calc.elecInvalid ? calc.elecUnits * roomElecRate : 0) +
+                (draft.currWater !== '' && !calc.waterInvalid ? calc.waterUnits * roomWaterRate : 0);
+
                 return (
                   <tr key={room.id}>
-                    <td className="px-3 py-2 align-top">
+                    <td className="px-3 py-2.5 align-top">
                       <p className="font-medium text-ink">Room {room.room_number}</p>
                       <p className="text-[12px] text-ink-soft">
                         {occupiedRoomIds.has(room.id) ? 'Occupied' : 'Vacant'}
                       </p>
                     </td>
-                    <td className="px-3 py-2 align-top">
+                    <td className="px-3 py-2.5 align-top">
                       <Input
-                        aria-label={`Room ${room.room_number} electricity units`}
+                        aria-label={`Room ${room.room_number} electricity meter reading`}
                         type="number"
                         min="0"
                         step="0.01"
-                        value={usage.electricity}
-                        onChange={(event) => setUsage(room.id, 'electricity', event.target.value)}
+                        placeholder={String(calc.prevElec)}
+                        value={draft.currElectricity}
+                        onChange={(event) => updateRoom(room.id, { currElectricity: event.target.value })}
                         className="w-28" />
-                      
-                      {usage.electricity !== '' &&
-                      <p className="mt-1 text-[11px] text-ink-muted">{formatPerDay(usage.electricity, month)}</p>
-                      }
+                      <p className="mt-1 text-[11px] text-ink-soft">
+                        Prev: {formatUnits(calc.prevElec)}
+                      </p>
+                      {draft.currElectricity !== '' && (
+                        calc.elecInvalid ?
+                        <p className="mt-0.5 text-[11px] text-danger-600">Below previous ({formatUnits(calc.prevElec)})</p> :
+                        <p className="mt-0.5 text-[11px] text-ink-muted">
+                          {formatUnits(calc.elecUnits)} units · {formatPerDay(calc.elecUnits, month)}
+                        </p>
+                      )}
                     </td>
-                    <td className="px-3 py-2 align-top">
+                    <td className="px-3 py-2.5 align-top">
                       <Input
-                        aria-label={`Room ${room.room_number} water units`}
+                        aria-label={`Room ${room.room_number} water meter reading`}
                         type="number"
                         min="0"
                         step="0.01"
-                        value={usage.water}
-                        onChange={(event) => setUsage(room.id, 'water', event.target.value)}
+                        placeholder={String(calc.prevWater)}
+                        value={draft.currWater}
+                        onChange={(event) => updateRoom(room.id, { currWater: event.target.value })}
                         className="w-28" />
-                      
-                      {usage.water !== '' &&
-                      <p className="mt-1 text-[11px] text-ink-muted">{formatPerDay(usage.water, month)}</p>
+                      <p className="mt-1 text-[11px] text-ink-soft">
+                        Prev: {formatUnits(calc.prevWater)}
+                      </p>
+                      {draft.currWater !== '' && (
+                        calc.waterInvalid ?
+                        <p className="mt-0.5 text-[11px] text-danger-600">Below previous ({formatUnits(calc.prevWater)})</p> :
+                        <p className="mt-0.5 text-[11px] text-ink-muted">
+                          {formatUnits(calc.waterUnits)} units · {formatPerDay(calc.waterUnits, month)}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 align-top">
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-muted">
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 accent-brand-600"
+                          checked={draft.customRateEnabled}
+                          onChange={(event) =>
+                            updateRoom(room.id, {
+                              customRateEnabled: event.target.checked,
+                              customElectricityRate:
+                                event.target.checked && draft.customElectricityRate === '' ?
+                                defaultElectricityRate.toFixed(2) :
+                                draft.customElectricityRate,
+                              customWaterRate:
+                                event.target.checked && draft.customWaterRate === '' ?
+                                defaultWaterRate.toFixed(2) :
+                                draft.customWaterRate
+                            })
+                          } />
+                        <span>Custom</span>
+                      </label>
+                      {draft.customRateEnabled &&
+                      <div className="mt-1.5 flex flex-col gap-1">
+                          <Input
+                            aria-label={`Room ${room.room_number} custom electricity rate`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Elec rate"
+                            value={draft.customElectricityRate}
+                            onChange={(event) => updateRoom(room.id, { customElectricityRate: event.target.value })}
+                            className="w-24" />
+                          <Input
+                            aria-label={`Room ${room.room_number} custom water rate`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="Water rate"
+                            value={draft.customWaterRate}
+                            onChange={(event) => updateRoom(room.id, { customWaterRate: event.target.value })}
+                            className="w-24" />
+                        </div>
                       }
                     </td>
-                    <td className="px-3 py-2 text-right align-top font-medium text-ink">
-                      {usage.electricity === '' && usage.water === '' ?
+                    <td className="px-3 py-2.5 text-right align-top font-medium text-ink">
+                      {!calc.included ?
                       <span className="font-normal text-ink-soft">—</span> :
-
                       formatCurrency(estimate)
                       }
                     </td>
@@ -350,12 +582,6 @@ export function BuildingBillModal({
           </table>
         </div>
       </div>
-
-      <p className="text-[12px] leading-relaxed text-ink-muted">
-        Each tenant pays their room bill directly to the utility supplier — these amounts are never recorded as income.
-        Any advance credit a room has from earlier overpayments is applied to its new bill automatically. You can
-        override any room&apos;s per-unit price afterwards.
-      </p>
     </FormModal>);
 
 }

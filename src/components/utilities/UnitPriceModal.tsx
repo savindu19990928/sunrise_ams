@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { BuildingUtilityBill, MonthlyUtilityRow } from '../../types';
 import type { ApiError } from '../../utils/api';
-import { formatCurrency, formatMonth, toNumber } from '../../utils/format';
+import { formatCurrency, toNumber } from '../../utils/format';
 import { formatUnits } from '../../utils/utilityUsage';
 import { Button } from '../ui/Button';
 import { Field, Input } from '../ui/Field';
@@ -17,14 +17,16 @@ interface UnitPriceModalProps {
   onSubmit: (row: MonthlyUtilityRow, payload: Record<string, unknown>) => void;
 }
 
-export function UnitPriceModal({ row, month, buildingBill, pending, error, onClose, onSubmit }: UnitPriceModalProps) {
+export function UnitPriceModal({ row, buildingBill, pending, error, onClose, onSubmit }: UnitPriceModalProps) {
   const [electricity, setElectricity] = useState('');
   const [water, setWater] = useState('');
+  const [useDefault, setUseDefault] = useState(false);
   const [touched, setTouched] = useState(false);
 
   useEffect(() => {
     if (!row) return;
     setTouched(false);
+    setUseDefault(false);
     setElectricity(String(toNumber(row.electricity_unit_price)));
     setWater(String(toNumber(row.water_unit_price)));
   }, [row]);
@@ -35,7 +37,12 @@ export function UnitPriceModal({ row, month, buildingBill, pending, error, onClo
 
   const handleSubmit = () => {
     setTouched(true);
-    if (!row || invalid(electricity) || invalid(water)) return;
+    if (!row) return;
+    if (useDefault) {
+      onSubmit(row, { use_default: true });
+      return;
+    }
+    if (invalid(electricity) || invalid(water)) return;
     onSubmit(row, {
       electricity_unit_price: toNumber(electricity).toFixed(2),
       water_unit_price: toNumber(water).toFixed(2)
@@ -47,8 +54,7 @@ export function UnitPriceModal({ row, month, buildingBill, pending, error, onClo
       open={Boolean(row)}
       onClose={onClose}
       onSubmit={handleSubmit}
-      title={row ? `Per-unit price · Room ${row.room_number}` : 'Per-unit price'}
-      description={`Override this room's rates for ${formatMonth(month)}. Other rooms keep the building rate.`}
+      title={row ? `Unit prices · Room ${row.room_number}` : 'Unit prices'}
       submitLabel="Save prices"
       pending={pending}
       error={error}
@@ -58,8 +64,8 @@ export function UnitPriceModal({ row, month, buildingBill, pending, error, onClo
         <Field
           label="Electricity / unit"
           htmlFor="up_electricity"
-          error={touched ? invalid(electricity) : undefined}
-          hint={buildingBill ? `Building rate ${formatCurrency(buildingBill.electricity_unit_price)}` : undefined}>
+          error={touched && !useDefault ? invalid(electricity) : undefined}
+          hint={buildingBill ? `Default ${formatCurrency(buildingBill.electricity_unit_price)}` : undefined}>
           
           <Input
             id="up_electricity"
@@ -67,16 +73,28 @@ export function UnitPriceModal({ row, month, buildingBill, pending, error, onClo
             min="0"
             step="0.01"
             value={electricity}
-            onChange={(event) => setElectricity(event.target.value)} />
+            onChange={(event) => {
+              setUseDefault(false);
+              setElectricity(event.target.value);
+            }} />
           
         </Field>
         <Field
           label="Water / unit"
           htmlFor="up_water"
-          error={touched ? invalid(water) : undefined}
-          hint={buildingBill ? `Building rate ${formatCurrency(buildingBill.water_unit_price)}` : undefined}>
+          error={touched && !useDefault ? invalid(water) : undefined}
+          hint={buildingBill ? `Default ${formatCurrency(buildingBill.water_unit_price)}` : undefined}>
           
-          <Input id="up_water" type="number" min="0" step="0.01" value={water} onChange={(event) => setWater(event.target.value)} />
+          <Input
+            id="up_water"
+            type="number"
+            min="0"
+            step="0.01"
+            value={water}
+            onChange={(event) => {
+              setUseDefault(false);
+              setWater(event.target.value);
+            }} />
         </Field>
       </div>
 
@@ -85,11 +103,12 @@ export function UnitPriceModal({ row, month, buildingBill, pending, error, onClo
         variant="ghost"
         size="sm"
         onClick={() => {
+          setUseDefault(true);
           setElectricity(String(toNumber(buildingBill.electricity_unit_price)));
           setWater(String(toNumber(buildingBill.water_unit_price)));
         }}>
         
-          Reset to building rates
+          Reset to default rates
         </Button>
       }
 

@@ -14,7 +14,6 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { type Column, DataTable } from '../components/ui/DataTable';
 import { PageHeader } from '../components/ui/PageHeader';
 import { SearchInput } from '../components/ui/SearchInput';
-import { formatCurrency } from '../utils/format';
 
 export function Customers() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -108,17 +107,6 @@ export function Customers() {
           </div>);
 
     }
-  },
-  {
-    key: 'threshold',
-    header: 'Deposit threshold',
-    align: 'right',
-    render: (customer) =>
-    customer.minimum_deposit_threshold === undefined || customer.minimum_deposit_threshold === null ?
-    <Badge tone="warn">Not set</Badge> :
-
-    <span className="whitespace-nowrap text-ink">{formatCurrency(customer.minimum_deposit_threshold)}</span>
-
   },
   {
     key: 'room',
@@ -221,7 +209,7 @@ export function Customers() {
       <ConfirmDialog
         open={Boolean(deleting)}
         title={`Delete ${deleting?.first_name ?? ''} ${deleting?.last_name ?? ''}?`}
-        message="The customer record will be removed. Existing leases and bills may block deletion on the server."
+        message="The customer record will be removed. Existing leases and bills may block deletion."
         confirmLabel="Delete customer"
         danger
         pending={crud.pending}

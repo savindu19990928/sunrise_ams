@@ -72,7 +72,7 @@ export function Staff() {
     <div className="space-y-5">
       <PageHeader
         title="Staff accounts"
-        description="Create additional admin logins. Only superusers can access this endpoint." />
+        description="Create additional admin logins. Only superusers can create staff accounts." />
       
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,32rem)_1fr] lg:items-start">

@@ -23,21 +23,14 @@ export function depositBalance(lease: Lease | undefined | null): number {
   return Math.max(0, Number(lease.current_deposit_balance ?? lease.remaining_deposit ?? 0));
 }
 
-/** Customer's minimum deposit threshold — deductions stop at or below it. */
-export function depositThreshold(customer: Customer | undefined | null): number {
-  if (!customer) return 0;
-  return Math.max(0, Number(customer.minimum_deposit_threshold ?? 0) || 0);
-}
-
 /**
- * Threshold recorded on the lease. Falls back to the customer's value for
- * leases created before the threshold moved onto the lease.
+ * Threshold recorded on the lease.
  */
-export function leaseThreshold(lease: Lease | undefined | null, customer?: Customer | null): number {
+export function leaseThreshold(lease: Lease | undefined | null): number {
   if (lease && lease.minimum_deposit_threshold !== undefined && lease.minimum_deposit_threshold !== null) {
     return Math.max(0, Number(lease.minimum_deposit_threshold) || 0);
   }
-  return depositThreshold(customer);
+  return 0;
 }
 
 /**

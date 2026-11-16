@@ -15,7 +15,7 @@ function renderValue(key: string, value: unknown): React.ReactNode {
   if (typeof value === 'string') {
     if (isDateKey(key) && /^\d{4}-\d{2}-\d{2}/.test(value)) return formatDate(value);
     if (isCurrencyKey(key) && /^-?\d+(\.\d+)?$/.test(value)) return formatCurrency(value);
-    if (['status', 'method', 'room_type'].includes(key.toLowerCase())) {
+    if (['status', 'method', 'room_type', 'bill_category'].includes(key.toLowerCase())) {
       return <Badge tone={value === 'paid' ? 'success' : value === 'unpaid' ? 'danger' : 'neutral'}>{titleCase(value)}</Badge>;
     }
     return value;

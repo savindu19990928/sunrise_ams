@@ -20,15 +20,21 @@ const currencyKeys = [
 'fee',
 'deduction',
 'revenue',
-'charge'];
+'charge',
+'balance',
+'due',
+'paid',
+'price',
+'adjustment',
+'difference'];
 
 
-const dateKeys = ['date', 'month', 'period'];
+const dateKeys = ['date', 'month', 'period', 'created_at'];
 
 export function isCurrencyKey(key: string): boolean {
   const lower = key.toLowerCase();
-  // Usage columns (units, per-day averages) and counts are quantities, not money.
-  if (/units|per_day|count|_id$/.test(lower)) return false;
+  // Usage columns (units, per-day averages), meter readings, and counts are quantities, not money.
+  if (/units|per_day|count|_id$|reading/.test(lower)) return false;
   return currencyKeys.some((needle) => lower.includes(needle));
 }
 
@@ -91,19 +97,31 @@ function flattenCustomerDetails(rows: Row[]): Row[] {
     };
     const leases = Array.isArray(row.leases) ? row.leases as Row[] : [];
     if (!leases.length) {
-      return [{ ...base, room: null, deposit_paid: null, current_deposit: null, total_payments: null }];
+      return [{
+        ...base,
+        room: null,
+        room_type: null,
+        base_rent_fee: null,
+        base_deposit: null,
+        minimum_deposit_threshold: null,
+        current_deposit: null,
+        total_payments: null
+      }];
     }
     return leases.map((lease) => ({
       ...base,
       room: lease.room ?? null,
-      deposit_paid: lease.deposit_paid ?? null,
+      room_type: lease.room_type ?? null,
+      base_rent_fee: lease.base_rent_fee ?? null,
+      base_deposit: lease.base_deposit ?? lease.deposit_paid ?? null,
+      minimum_deposit_threshold: lease.minimum_deposit_threshold ?? null,
       current_deposit: lease.current_deposit ?? null,
       total_payments: lease.total_payments ?? null
     }));
   });
 }
 
-/** Generic fallback: lift one level of nested objects into prefixed columns. */
+/** Generic fallback: lift one level of nested objects into prefixed columns and drop duplicate derived columns. */
 function flattenGeneric(rows: Row[]): Row[] {
   return rows.map((row) => {
     const flat: Row = {};
@@ -118,6 +136,18 @@ function flattenGeneric(rows: Row[]): Row[] {
       } else {
         flat[key] = value;
       }
+    }
+    // Deposit paid is always the same as Base deposit; omit duplicate columns.
+    if ('base_deposit' in flat) {
+      delete flat.deposit_paid;
+      delete flat.initial_deposit;
+    }
+    // Monthly deduction = Base rent fee - Monthly rent fee; omit redundant column when both are present.
+    if ('base_rent_fee' in flat && 'rent_fee' in flat) {
+      delete flat.monthly_deposit_deduction;
+    }
+    if ('total_cost' in flat && 'total_bill' in flat) {
+      delete flat.total_bill;
     }
     return flat;
   });

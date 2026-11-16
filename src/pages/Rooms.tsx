@@ -19,7 +19,7 @@ import { customerName, mapById, roomStatus } from '../utils/lookup';
 export function Rooms() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: rooms, loading, error, reload } = useCollection<Room>('/api/rooms/');
-  const { data: leases, reload: reloadLeases } = useCollection<Lease>('/api/leases/');
+  const { data: leases } = useCollection<Lease>('/api/leases/');
   const { data: customers } = useCollection<Customer>('/api/customers/');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Room | null>(null);
@@ -37,8 +37,6 @@ export function Rooms() {
     }
   });
 
-  const leaseCrud = useCrud<Lease>('leases', { label: 'Active lease', onDone: reloadLeases });
-
   const customerMap = useMemo(() => mapById(customers), [customers]);
 
   const activeLeaseByRoom = useMemo(() => {
@@ -53,27 +51,12 @@ export function Rooms() {
 
   const activeRoomIds = useMemo(() => new Set<ID>(activeLeaseByRoom.keys()), [activeLeaseByRoom]);
 
-  const activeLease = useMemo(
-    () => (editing ? activeLeaseByRoom.get(editing.id) ?? null : null),
-    [editing, activeLeaseByRoom]
-  );
-
-  const activeLeaseName = useMemo(() => {
-    if (!activeLease) return null;
-    return activeLease.customer_name ?? customerName(customerMap.get(activeLease.customer));
-  }, [activeLease, customerMap]);
-
-  const handleSubmit = async (payload: Record<string, unknown>, applyToActiveLease: boolean) => {
+  const handleSubmit = async (payload: Record<string, unknown>) => {
     if (!editing) {
       await crud.create(payload);
       return;
     }
-    const saved = await crud.update(editing.id, payload);
-    if (!saved || !applyToActiveLease || !activeLease) return;
-    await leaseCrud.update(activeLease.id, {
-      rent_fee: payload.base_rent_fee,
-      monthly_deposit_deduction: payload.monthly_deposit_deduction
-    });
+    await crud.update(editing.id, payload);
   };
 
   useEffect(() => {
@@ -114,7 +97,7 @@ export function Rooms() {
     <div className="space-y-5">
       <PageHeader
         title="Rooms"
-        description="Room configuration drives rent, deposits and the monthly deposit deduction applied to every bill."
+        description="Manage room numbers, room types and notes. Rent, deposits and utility rates are configured on leases and monthly bills."
         actions={
           <Button
             icon={PlusIcon}
@@ -204,9 +187,8 @@ export function Rooms() {
       <RoomForm
         open={formOpen}
         room={editing}
-        pending={crud.pending || leaseCrud.pending}
+        pending={crud.pending}
         error={crud.error}
-        activeLeaseName={activeLeaseName}
         onClose={() => {
           setFormOpen(false);
           setEditing(null);

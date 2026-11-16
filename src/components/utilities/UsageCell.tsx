@@ -10,12 +10,29 @@ interface UsageCellProps {
   cost?: number | string | null;
   /** Shows a "custom" marker when the room's rate differs from the building rate. */
   buildingRate?: number | string | null;
+  previousReading?: number | string | null;
+  currentReading?: number | string | null;
 }
 
-/** Usage, average per day right beside it, then rate and cost underneath. */
-export function UsageCell({ units, month, rate, cost, buildingRate }: UsageCellProps) {
+/** Usage, meter readings, average per day, then rate and cost underneath. */
+export function UsageCell({
+  units,
+  month,
+  rate,
+  cost,
+  buildingRate,
+  previousReading,
+  currentReading
+}: UsageCellProps) {
   const isCustom =
   buildingRate !== undefined && buildingRate !== null && rate !== undefined && rate !== null && toNumber(rate) !== toNumber(buildingRate);
+  const hasReadings =
+  previousReading !== undefined &&
+  previousReading !== null &&
+  previousReading !== '' &&
+  currentReading !== undefined &&
+  currentReading !== null &&
+  currentReading !== '';
 
   return (
     <div className="min-w-0">
@@ -23,8 +40,13 @@ export function UsageCell({ units, month, rate, cost, buildingRate }: UsageCellP
         <span className="font-medium">{formatUnits(units)} units</span>
         <span className="ml-1.5 text-[12px] text-ink-muted">· {formatPerDay(units, month)}</span>
       </p>
+      {hasReadings &&
+      <p className="mt-0.5 whitespace-nowrap text-[11px] text-ink-soft">
+          Meter {formatUnits(previousReading)} → {formatUnits(currentReading)}
+        </p>
+      }
       <p className="mt-0.5 whitespace-nowrap text-[12px] text-ink-soft">
-        {rate !== undefined && rate !== null ? `${formatCurrency(rate)} / unit` : 'Room default rate'}
+        {rate !== undefined && rate !== null ? `${formatCurrency(rate)} / unit` : 'Monthly default rate'}
         {isCustom && <span className="ml-1 font-medium text-brand-700">custom</span>}
         {cost !== undefined && cost !== null && <span className="text-ink-muted"> → {formatCurrency(cost)}</span>}
       </p>

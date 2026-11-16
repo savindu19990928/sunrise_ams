@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { BanknoteIcon, HistoryIcon, ReceiptTextIcon, SlidersHorizontalIcon, Trash2Icon, WalletIcon } from 'lucide-react';
-import type { Lease, MonthlyUtilityRow, MonthlyUtilitySummary, Room } from '../types';
+import { Link, useSearchParams } from 'react-router-dom';
+import { BanknoteIcon, ClipboardListIcon, GaugeIcon, HistoryIcon, ReceiptTextIcon, SlidersHorizontalIcon, Trash2Icon, WalletIcon } from 'lucide-react';
+import type { Lease, MonthlyUtilityRow, MonthlyUtilitySummary, Room, RoomPreviousReading } from '../types';
 import { useAction } from '../hooks/useAction';
 import { useCrud } from '../hooks/useCrud';
 import { useCollection, useResource } from '../hooks/useResource';
 import { BuildingBillModal } from '../components/utilities/BuildingBillModal';
 import { BuildingBillSummary } from '../components/utilities/BuildingBillSummary';
+import { BulkUnitPriceModal } from '../components/utilities/BulkUnitPriceModal';
+import { PreviousReadingsModal } from '../components/utilities/PreviousReadingsModal';
 import { RoomUtilityHistoryModal } from '../components/utilities/RoomUtilityHistoryModal';
 import { UnitPriceModal } from '../components/utilities/UnitPriceModal';
 import { UsageCell } from '../components/utilities/UsageCell';
@@ -22,12 +24,14 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { buildQuery } from '../utils/api';
 import { firstOfCurrentMonth, formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from '../utils/format';
 import { notifyRemindersChanged } from '../utils/reminders';
-import { utilityRemaining } from '../utils/utilityUsage';
+import { formatUnits, utilityRemaining } from '../utils/utilityUsage';
 
 export function Utilities() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState(monthInputValue(firstOfCurrentMonth()));
   const [billOpen, setBillOpen] = useState(false);
+  const [prevReadingsOpen, setPrevReadingsOpen] = useState(false);
+  const [bulkPriceOpen, setBulkPriceOpen] = useState(false);
   const [pricing, setPricing] = useState<MonthlyUtilityRow | null>(null);
   const [paying, setPaying] = useState<MonthlyUtilityRow | null>(null);
   const [deleting, setDeleting] = useState<MonthlyUtilityRow | null>(null);
@@ -35,17 +39,21 @@ export function Utilities() {
   const [historyRoomId, setHistoryRoomId] = useState<number | null>(null);
 
   const summaryPath = month ? `/api/utilities/monthly-summary/${buildQuery({ billing_month: month })}` : null;
+  const prevReadingsPath = month && /^\d{4}-\d{2}$/.test(month) ? `/api/utilities/previous-readings/${buildQuery({ billing_month: month })}` : null;
   const { data: summary, loading, error, reload } = useResource<MonthlyUtilitySummary>(summaryPath);
+  const { data: previousReadings, reload: reloadPrevReadings } = useCollection<RoomPreviousReading>(prevReadingsPath);
   const { data: rooms } = useCollection<Room>('/api/rooms/');
   const { data: leases } = useCollection<Lease>('/api/leases/');
 
   const afterChange = useCallback(() => {
     reload();
+    reloadPrevReadings();
     notifyRemindersChanged();
-  }, [reload]);
+  }, [reload, reloadPrevReadings]);
 
   const billAction = useAction();
   const priceAction = useAction();
+  const bulkPriceAction = useAction();
   const paymentAction = useAction();
   const creditAction = useAction();
   const [applyingId, setApplyingId] = useState<number | null>(null);
@@ -115,7 +123,9 @@ export function Utilities() {
       month={selectedMonth}
       rate={row.electricity_unit_price}
       cost={row.electricity_cost}
-      buildingRate={buildingBill?.electricity_unit_price} />
+      buildingRate={buildingBill?.electricity_unit_price}
+      previousReading={row.previous_electricity_meter_reading}
+      currentReading={row.electricity_meter_reading} />
 
 
   },
@@ -128,7 +138,9 @@ export function Utilities() {
       month={selectedMonth}
       rate={row.water_unit_price}
       cost={row.water_cost}
-      buildingRate={buildingBill?.water_unit_price} />
+      buildingRate={buildingBill?.water_unit_price}
+      previousReading={row.previous_water_meter_reading}
+      currentReading={row.water_meter_reading} />
 
 
   },
@@ -168,12 +180,25 @@ export function Utilities() {
     <div className="space-y-5">
       <PageHeader
         title="Utilities"
-        description="Enter the month's supplier bill, its stated usage and each room's meters. Tenants pay their room bill to the supplier; mark it paid when they tell you. Overpayments become credit for future months."
         actions={
         <>
+            <Link
+              to="/reports?type=recorrection-logs"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:bg-canvas">
+              <ClipboardListIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+              Audit log
+            </Link>
+            <Button variant="secondary" icon={GaugeIcon} onClick={() => setPrevReadingsOpen(true)}>
+              Previous readings
+            </Button>
             <Button variant="secondary" icon={HistoryIcon} onClick={() => openHistory(null)}>
               Room history
             </Button>
+            {rows.length > 0 &&
+            <Button variant="secondary" icon={SlidersHorizontalIcon} onClick={() => setBulkPriceOpen(true)}>
+                Custom rates
+              </Button>
+            }
             <Button icon={ReceiptTextIcon} onClick={() => setBillOpen(true)}>
               Enter building bill
             </Button>
@@ -199,8 +224,7 @@ export function Utilities() {
 
       <Card>
         <CardHeader
-          title={`All rooms · ${formatMonth(selectedMonth)}`}
-          description="Usage with average per day, the per-unit price applied, and each room's bill." />
+          title={`All rooms · ${formatMonth(selectedMonth)}`} />
         
         {error && !notFound ?
         <ApiErrorState error={error} onRetry={reload} /> :
@@ -211,7 +235,6 @@ export function Utilities() {
           keyOf={(row) => row.utility_record_id}
           loading={loading}
           emptyTitle={`No utility data for ${formatMonth(selectedMonth)}`}
-          emptyDescription="Enter the building bill with each room's usage to create the room bills."
           emptyAction={
           <Button icon={ReceiptTextIcon} onClick={() => setBillOpen(true)}>
                 Enter building bill
@@ -259,6 +282,58 @@ export function Utilities() {
 
         }
       </Card>
+
+      {notFound && previousReadings.length > 0 &&
+      <Card>
+          <CardHeader
+          title={`Previous meter readings · before ${formatMonth(selectedMonth)}`}
+          actions={
+          <Button variant="secondary" size="sm" icon={GaugeIcon} onClick={() => setPrevReadingsOpen(true)}>
+                View recent months
+              </Button>
+          } />
+          <DataTable
+          columns={[
+          {
+            key: 'room',
+            header: 'Room',
+            primary: true,
+            render: (item) =>
+            <span className="font-medium text-ink">
+                  Room {item.room_number}
+                  {item.room_type && <span className="ml-1.5 text-[12px] font-normal text-ink-soft">{titleCase(item.room_type)}</span>}
+                </span>
+          },
+          {
+            key: 'electricity',
+            header: 'Previous electricity meter',
+            render: (item) =>
+            item.previous_electricity_meter_reading !== null && item.previous_electricity_meter_reading !== undefined ?
+            <span>
+                  <span className="font-medium text-ink">{formatUnits(item.previous_electricity_meter_reading)}</span>
+                  {item.last_electricity_billing_month &&
+                  <span className="ml-1.5 text-[12px] text-ink-soft">({formatMonth(item.last_electricity_billing_month)})</span>
+                  }
+                </span> :
+            <span className="text-ink-soft">—</span>
+          },
+          {
+            key: 'water',
+            header: 'Previous water meter',
+            render: (item) =>
+            item.previous_water_meter_reading !== null && item.previous_water_meter_reading !== undefined ?
+            <span>
+                  <span className="font-medium text-ink">{formatUnits(item.previous_water_meter_reading)}</span>
+                  {item.last_water_billing_month &&
+                  <span className="ml-1.5 text-[12px] text-ink-soft">({formatMonth(item.last_water_billing_month)})</span>
+                  }
+                </span> :
+            <span className="text-ink-soft">—</span>
+          }]}
+          rows={previousReadings}
+          keyOf={(item) => item.room_id} />
+        </Card>
+      }
 
       <BuildingBillModal
         open={billOpen}
@@ -334,6 +409,33 @@ export function Utilities() {
         rooms={rooms}
         initialRoomId={historyRoomId}
         onClose={() => setHistoryOpen(false)} />
+
+      <PreviousReadingsModal
+        open={prevReadingsOpen}
+        defaultMonth={month}
+        onClose={() => setPrevReadingsOpen(false)} />
+
+      <BulkUnitPriceModal
+        open={bulkPriceOpen}
+        month={selectedMonth}
+        rows={rows}
+        buildingBill={buildingBill}
+        pending={bulkPriceAction.pending}
+        error={bulkPriceAction.error}
+        onClose={() => {
+          setBulkPriceOpen(false);
+          bulkPriceAction.setError(null);
+        }}
+        onSubmit={async (payload) => {
+          const result = await bulkPriceAction.run(
+            '/api/utilities/set-unit-prices/',
+            payload,
+            `Custom rates updated for ${formatMonth(selectedMonth)}.`
+          );
+          if (!result) return;
+          setBulkPriceOpen(false);
+          afterChange();
+        }} />
       
 
       <ConfirmDialog

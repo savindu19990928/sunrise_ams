@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DownloadIcon, FileTextIcon, PlayIcon, TableIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Customer, ReportType } from '../types';
@@ -6,6 +7,7 @@ import { useCollection, useResource } from '../hooks/useResource';
 import { ProfitChart } from '../components/reports/ProfitChart';
 import { type ReportRow, ReportTable } from '../components/reports/ReportTable';
 import { ApiErrorState } from '../components/ui/ApiErrorState';
+import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Field, Input, Select } from '../components/ui/Field';
@@ -23,20 +25,26 @@ interface ReportDefinition {
   label: string;
   description: string;
   needsCustomer?: boolean;
+  supportsCategoryFilter?: boolean;
 }
 
 const reports: ReportDefinition[] = [
-{ type: 'room-data', label: 'Room data', description: 'Current configuration of every room: rent, deposit and monthly deduction.' },
-{ type: 'customer-details', label: 'Customer details', description: 'Contact details with deposit paid and total payments in the period.' },
-{ type: 'customer-payments', label: 'Customer payments', description: 'Every payment made by one specific customer.', needsCustomer: true },
-{ type: 'all-payments', label: 'All payments', description: 'All payments recorded across the system in the period.' },
-{ type: 'this-month-charges', label: 'Charges', description: 'Bills generated in the period with their full breakdown.' },
-{ type: 'room-repairs', label: 'Room repairs', description: 'Repair costs broken down by room.' },
 { type: 'profits', label: 'Profits', description: 'Rent revenue less repair costs, with per-room profit. Utility payments to suppliers are excluded.' },
+{ type: 'customer-room-fee-payments', label: 'Customer room fee payments', description: 'Room fee payments made by a specific customer to the property owner.', needsCustomer: true },
+{ type: 'customer-utility-payments', label: 'Customer utility payments', description: 'Utility bill payments made by a specific customer to the utility supplier.', needsCustomer: true },
+{ type: 'all-room-fee-payments', label: 'All room fee payments', description: 'All customers’ room fee payments paid to the property owner in the period.' },
+{ type: 'all-utility-payments', label: 'All utility payments', description: 'All customers’ utility bill payments paid to the utility supplier in the period.' },
+{ type: 'unpaid-room-fee-bills', label: 'Unpaid room fee bills', description: 'All unpaid room fee bills across all customers with remaining balances.' },
+{ type: 'unpaid-utility-bills', label: 'Unpaid utility bills', description: 'All unpaid utility bills across all customers with remaining balances.' },
+{ type: 'recorrection-logs', label: 'Bill recorrection audit log', description: 'Immutable audit log of every utility and room fee bill recorrection.', supportsCategoryFilter: true },
+{ type: 'room-data', label: 'Room data', description: 'Current list of rooms: room number, room type, note and utility credit balance.' },
+{ type: 'customer-details', label: 'Customer details', description: 'Contact details with deposit paid and total payments in the period.' },
+{ type: 'this-month-charges', label: 'Charges', description: 'Room fee bills generated in the period with their full breakdown.' },
+{ type: 'room-repairs', label: 'Room repairs', description: 'Repair costs broken down by room.' },
 {
   type: 'utility-payments',
-  label: 'Utility supplier payments',
-  description: 'Utility bills tenants paid directly to suppliers, with receipts and still-unpaid room bills. Not business income.'
+  label: 'Utility payments summary',
+  description: 'Combined utility supplier payments summary with room breakdown and unpaid records.'
 }];
 
 
@@ -47,7 +55,9 @@ function findRows(payload: unknown): ReportRow[] {
   if (Array.isArray(payload)) return payload as ReportRow[];
   if (typeof payload !== 'object') return [];
   const record = payload as Record<string, unknown>;
-  if (Array.isArray(record.results)) return record.results as ReportRow[];
+  for (const key of ['results', 'payments', 'unpaid_bills', 'logs']) {
+    if (Array.isArray(record[key])) return record[key] as ReportRow[];
+  }
   for (const value of Object.values(record)) {
     if (Array.isArray(value) && value.every((item) => item && typeof item === 'object')) return value as ReportRow[];
   }
@@ -73,11 +83,18 @@ function findBreakdown(payload: unknown): {label: string;data: Record<string, nu
 
 function findTotals(payload: unknown): {key: string;value: number;}[] {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
-  return Object.entries(payload as Record<string, unknown>).
+  const record = payload as Record<string, unknown>;
+  const skipAliases = new Set<string>();
+  if ('total_profit' in record) skipAliases.add('net_profit');
+  if ('total_revenue' in record) skipAliases.add('lease_revenue');
+  if ('total_expenses' in record) skipAliases.add('total_repair_costs');
+  if ('total_paid_to_suppliers' in record) skipAliases.add('total_utility_payments_to_suppliers');
+  return Object.entries(record).
   filter(
     ([key, value]) =>
+    !skipAliases.has(key) &&
     (typeof value === 'number' || typeof value === 'string' && NUMERIC_STRING.test(value)) &&
-    /total|profit|revenue|repair|expense|utility/i.test(key) &&
+    /total|profit|revenue|repair|expense|utility|unpaid/i.test(key) &&
     !/count/i.test(key)
   ).
   map(([key, value]) => ({ key, value: Number(value) }));
@@ -96,22 +113,44 @@ function findUnpaidUtilities(payload: unknown): ReportRow[] {
 }
 
 export function Reports() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [active, setActive] = useState<ReportType>('profits');
   const [startDate, setStartDate] = useState(firstOfCurrentMonth());
   const [endDate, setEndDate] = useState(today());
+  const [monthFilter, setMonthFilter] = useState('');
   const [customerId, setCustomerId] = useState('');
+  const [billCategory, setBillCategory] = useState('');
+
+  const handleMonthChange = (value: string) => {
+    setMonthFilter(value);
+    if (!value || !/^\d{4}-\d{2}$/.test(value)) return;
+    const [y, m] = value.split('-').map((n) => Number.parseInt(n, 10));
+    const lastDay = new Date(y, m, 0).getDate();
+    setStartDate(`${value}-01`);
+    setEndDate(`${value}-${String(lastDay).padStart(2, '0')}`);
+  };
+
+  useEffect(() => {
+    const requested = searchParams.get('type') as ReportType | null;
+    if (requested && reports.some((r) => r.type === requested)) {
+      setActive(requested);
+      searchParams.delete('type');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const { data: customers } = useCollection<Customer>('/api/customers/');
-  const definition = reports.find((report) => report.type === active) as ReportDefinition;
+  const definition = reports.find((report) => report.type === active) ?? reports[0];
 
   const path = useMemo(() => {
     if (definition.needsCustomer && !customerId) return null;
     return `/api/reports/${active}/${buildQuery({
       start_date: startDate,
       end_date: endDate,
-      customer_id: definition.needsCustomer ? customerId : undefined
+      customer_id: definition.needsCustomer ? customerId : undefined,
+      bill_category: definition.supportsCategoryFilter && billCategory ? billCategory : undefined
     })}`;
-  }, [active, startDate, endDate, customerId, definition]);
+  }, [active, startDate, endDate, customerId, billCategory, definition]);
 
   const { data, loading, error, reload } = useResource<unknown>(path);
 
@@ -129,6 +168,14 @@ export function Reports() {
     const value = (data as Record<string, unknown>).period;
     if (value && typeof value === 'object') return value as {start?: string;end?: string;};
     return null;
+  }, [data]);
+  const meta = useMemo(() => {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    const record = data as Record<string, unknown>;
+    const recipient = typeof record.payment_recipient === 'string' ? record.payment_recipient : null;
+    const countKey = ['payments_count', 'unpaid_count', 'logs_count'].find((k) => typeof record[k] === 'number');
+    const count = countKey ? (record[countKey] as number) : null;
+    return recipient || count !== null ? { recipient, count } : null;
   }, [data]);
 
   const selectedCustomer = useMemo(
@@ -216,13 +263,39 @@ export function Reports() {
           title={definition.label}
           description={definition.description}
           actions={
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+              <Field label="Month" htmlFor="report_month" className="sm:w-40">
+                <Input id="report_month" type="month" value={monthFilter} onChange={(event) => handleMonthChange(event.target.value)} />
+              </Field>
               <Field label="Start date" htmlFor="report_start" className="sm:w-40">
-                <Input id="report_start" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+                <Input
+                  id="report_start"
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => {
+                    setMonthFilter('');
+                    setStartDate(event.target.value);
+                  }} />
               </Field>
               <Field label="End date" htmlFor="report_end" className="sm:w-40">
-                <Input id="report_end" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+                <Input
+                  id="report_end"
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => {
+                    setMonthFilter('');
+                    setEndDate(event.target.value);
+                  }} />
               </Field>
+              {definition.supportsCategoryFilter &&
+            <Field label="Bill category" htmlFor="report_bill_category" className="sm:w-44">
+                  <Select id="report_bill_category" value={billCategory} onChange={(event) => setBillCategory(event.target.value)}>
+                    <option value="">All categories</option>
+                    <option value="utility">Utility</option>
+                    <option value="room_fee">Room fee</option>
+                  </Select>
+                </Field>
+            }
               {definition.needsCustomer &&
             <Field label="Customer" htmlFor="report_customer" className="sm:w-56" required>
                   <Select id="report_customer" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
@@ -249,7 +322,7 @@ export function Reports() {
         <ApiErrorState error={error} onRetry={reload} /> :
 
         <>
-            {(period || totals.length > 0) && !loading &&
+            {(period || totals.length > 0 || meta) && !loading &&
           <div className="flex flex-col gap-4 border-b border-line px-4 py-4 sm:flex-row sm:flex-wrap sm:items-end sm:px-5">
                 {period &&
             <div>
@@ -257,6 +330,22 @@ export function Reports() {
                     <p className="mt-0.5 text-sm text-ink">
                       {formatDate(period.start)} → {formatDate(period.end)}
                     </p>
+                  </div>
+            }
+                {meta?.recipient &&
+            <div>
+                    <p className="text-[11px] uppercase tracking-wide text-ink-soft">Recipient</p>
+                    <p className="mt-1">
+                      <Badge tone={meta.recipient === 'property_owner' ? 'brand' : 'neutral'}>
+                        {meta.recipient === 'property_owner' ? 'Property owner' : 'Utility supplier'}
+                      </Badge>
+                    </p>
+                  </div>
+            }
+                {meta?.count !== null && meta?.count !== undefined &&
+            <div>
+                    <p className="text-[11px] uppercase tracking-wide text-ink-soft">Records</p>
+                    <p className="mt-0.5 text-sm font-medium text-ink">{meta.count}</p>
                   </div>
             }
                 {totals.map((total, index) =>

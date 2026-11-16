@@ -7,19 +7,16 @@ export interface Room {
   id: ID;
   room_number: string;
   room_type: RoomType | string;
-  base_rent_fee: number;
-  base_deposit: number;
-  monthly_deposit_deduction: number;
-  /** Price charged per electricity unit for this specific room. */
-  electricity_unit_price?: number;
-  /** Price charged per water unit for this specific room. */
-  water_unit_price?: number;
+  note?: string;
+  /** Alias populated by normalize.ts for backward compatibility. */
+  notes?: string;
+  utility_credit_balance?: number | string;
+  created_at?: string;
   /**
    * The API does not provide a status field for rooms.
    * In the UI, status is derived from whether the room has an active lease.
    */
   status?: RoomStatus;
-  notes?: string;
 }
 
 export type RoomStatus = 'vacant' | 'occupied';
@@ -51,8 +48,7 @@ export interface Customer {
   address: string;
   /** Nested by the API on /api/customers/ — optional, may be empty. */
   immediate_contacts?: ImmediateContact[];
-  /** Monthly deposit deductions stop once the deposit balance is at or below this amount. */
-  minimum_deposit_threshold?: number | string;
+  created_at?: string;
 }
 
 export interface Lease {
@@ -71,6 +67,7 @@ export interface Lease {
   minimum_deposit_threshold?: number | string;
   /** Sum of all rent payments collected for this lease (excludes utility payments). */
   total_payments_received?: number | string;
+  rent_credit_balance?: number | string;
   deposit_paid: number;
   /** Deposit still held. Deductions stop once this is at or below the customer's threshold. */
   current_deposit_balance: number;
@@ -92,9 +89,13 @@ export interface UtilityRecord {
   room_number?: string;
   room_type?: string;
   billing_month: string;
+  previous_electricity_meter_reading?: number | string;
+  electricity_meter_reading?: number | string;
   electricity_units?: number | string;
+  previous_water_meter_reading?: number | string;
+  water_meter_reading?: number | string;
   water_units?: number | string;
-  /** Month-specific rate. Optional — the API falls back to the room's default rate. */
+  /** Month-specific rate. Defaults to that month's calculated building rate. */
   electricity_unit_price?: number | string | null;
   water_unit_price?: number | string | null;
   /** Calculated by the API from units × unit price. */
@@ -135,9 +136,13 @@ export interface MonthlyUtilityRow {
   room_number: string;
   room_type?: string;
   customer_name?: string | null;
+  previous_electricity_meter_reading?: number | string;
+  electricity_meter_reading?: number | string;
   electricity_units: number | string;
   electricity_unit_price: number | string;
   electricity_cost: number | string;
+  previous_water_meter_reading?: number | string;
+  water_meter_reading?: number | string;
   water_units: number | string;
   water_unit_price: number | string;
   water_cost: number | string;
@@ -148,6 +153,29 @@ export interface MonthlyUtilityRow {
   room_credit_balance?: number | string;
   is_paid: boolean;
   due_date?: string | null;
+}
+
+export interface PreviousMonthReadingItem {
+  utility_record_id: ID;
+  billing_month: string;
+  previous_electricity_meter_reading: number | string;
+  electricity_meter_reading: number | string;
+  electricity_units: number | string;
+  previous_water_meter_reading: number | string;
+  water_meter_reading: number | string;
+  water_units: number | string;
+}
+
+export interface RoomPreviousReading {
+  room_id: ID;
+  room_number: string;
+  room_type?: string;
+  billing_month?: string;
+  last_electricity_billing_month?: string | null;
+  previous_electricity_meter_reading?: number | string | null;
+  last_water_billing_month?: string | null;
+  previous_water_meter_reading?: number | string | null;
+  previous_months?: PreviousMonthReadingItem[];
 }
 
 export interface MonthlyUtilitySummary {
@@ -283,6 +311,13 @@ export interface TokenPair {
 export type ReportType =
 'room-data' |
 'customer-details' |
+'customer-room-fee-payments' |
+'customer-utility-payments' |
+'all-room-fee-payments' |
+'all-utility-payments' |
+'unpaid-utility-bills' |
+'unpaid-room-fee-bills' |
+'recorrection-logs' |
 'customer-payments' |
 'all-payments' |
 'this-month-charges' |

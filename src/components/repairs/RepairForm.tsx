@@ -66,7 +66,6 @@ export function RepairForm({ open, repair, leases, pending, error, onClose, onSu
       onClose={onClose}
       onSubmit={handleSubmit}
       title={repair ? `Edit repair · Room ${repair.room_number ?? '—'}` : 'Log room repair'}
-      description="Repairs are logged against a tenant's lease. Any not yet settled are deducted from their remaining deposit when they leave the room."
       submitLabel={repair ? 'Save changes' : 'Log repair'}
       pending={pending}
       error={error}>

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { roomTypes } from '../../data/roomTypes';
 import type { Room, RoomType } from '../../types';
-import { toNumber } from '../../utils/format';
 import type { ApiError } from '../../utils/api';
 import { Field, Input, Select, Textarea } from '../ui/Field';
 import { FormModal } from '../ui/FormModal';
@@ -11,10 +10,8 @@ interface RoomFormProps {
   room: Room | null;
   pending: boolean;
   error: ApiError | null;
-  /** Tenant currently leasing this room, if any — their lease can inherit the new amounts. */
-  activeLeaseName?: string | null;
   onClose: () => void;
-  onSubmit: (payload: Record<string, unknown>, applyToActiveLease: boolean) => void;
+  onSubmit: (payload: Record<string, unknown>) => void;
 }
 
 function normalizeRoomType(value: string | undefined): RoomType {
@@ -25,45 +22,28 @@ function normalizeRoomType(value: string | undefined): RoomType {
 interface FormState {
   room_number: string;
   room_type: RoomType;
-  base_rent_fee: string;
-  base_deposit: string;
-  monthly_deposit_deduction: string;
-  electricity_unit_price: string;
-  water_unit_price: string;
-  notes: string;
+  note: string;
 }
 
 const emptyState: FormState = {
   room_number: '',
   room_type: 'single',
-  base_rent_fee: '',
-  base_deposit: '',
-  monthly_deposit_deduction: '',
-  electricity_unit_price: '',
-  water_unit_price: '',
-  notes: ''
+  note: ''
 };
 
-export function RoomForm({ open, room, pending, error, activeLeaseName, onClose, onSubmit }: RoomFormProps) {
+export function RoomForm({ open, room, pending, error, onClose, onSubmit }: RoomFormProps) {
   const [form, setForm] = useState<FormState>(emptyState);
   const [touched, setTouched] = useState(false);
-  const [applyToLease, setApplyToLease] = useState(true);
 
   useEffect(() => {
     if (!open) return;
     setTouched(false);
-    setApplyToLease(true);
     setForm(
       room ?
       {
         room_number: room.room_number ?? '',
         room_type: normalizeRoomType(room.room_type),
-        base_rent_fee: String(room.base_rent_fee ?? ''),
-        base_deposit: String(room.base_deposit ?? ''),
-        monthly_deposit_deduction: String(room.monthly_deposit_deduction ?? ''),
-        electricity_unit_price: String(room.electricity_unit_price ?? ''),
-        water_unit_price: String(room.water_unit_price ?? ''),
-        notes: room.notes ?? ''
+        note: room.note ?? room.notes ?? ''
       } :
       emptyState
     );
@@ -73,24 +53,15 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
   setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
   const missingNumber = touched && !form.room_number.trim();
-  const missingRent = touched && !form.base_rent_fee;
 
   const handleSubmit = () => {
     setTouched(true);
-    if (!form.room_number.trim() || !form.base_rent_fee) return;
-    onSubmit(
-      {
-        room_number: form.room_number.trim(),
-        room_type: form.room_type,
-        base_rent_fee: toNumber(form.base_rent_fee),
-        base_deposit: toNumber(form.base_deposit),
-        monthly_deposit_deduction: toNumber(form.monthly_deposit_deduction),
-        electricity_unit_price: form.electricity_unit_price === '' ? null : toNumber(form.electricity_unit_price),
-        water_unit_price: form.water_unit_price === '' ? null : toNumber(form.water_unit_price),
-        notes: form.notes.trim()
-      },
-      applyToLease
-    );
+    if (!form.room_number.trim()) return;
+    onSubmit({
+      room_number: form.room_number.trim(),
+      room_type: form.room_type,
+      note: form.note.trim()
+    });
   };
 
   return (
@@ -99,7 +70,6 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
       onClose={onClose}
       onSubmit={handleSubmit}
       title={room ? `Edit room ${room.room_number}` : 'Add room'}
-      description="Base rent, base deposit and the monthly deduction are copied onto each new lease for this room."
       submitLabel={room ? 'Save changes' : 'Create room'}
       pending={pending}
       error={error}>
@@ -117,75 +87,10 @@ export function RoomForm({ open, room, pending, error, activeLeaseName, onClose,
             )}
           </Select>
         </Field>
-        <Field label="Base rent fee" htmlFor="base_rent_fee" required error={missingRent ? 'Rent fee is required.' : undefined}>
-          <Input id="base_rent_fee" type="number" min="0" step="0.01" value={form.base_rent_fee} onChange={set('base_rent_fee')} placeholder="18000" />
-        </Field>
-        <Field label="Base deposit" htmlFor="base_deposit" hint="Collected before the lease starts.">
-          <Input id="base_deposit" type="number" min="0" step="0.01" value={form.base_deposit} onChange={set('base_deposit')} placeholder="36000" />
-        </Field>
-        <Field
-          label="Monthly deposit deduction"
-          htmlFor="monthly_deposit_deduction"
-          hint="Taken off the rent each month until the deposit runs out.">
-          
-          <Input
-            id="monthly_deposit_deduction"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.monthly_deposit_deduction}
-            onChange={set('monthly_deposit_deduction')}
-            placeholder="1500" />
-          
-        </Field>
-        <Field
-          label="Default electricity rate"
-          htmlFor="electricity_unit_price"
-          hint="Optional fallback. Monthly rates come from the building bill.">
-          
-          <Input
-            id="electricity_unit_price"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.electricity_unit_price}
-            onChange={set('electricity_unit_price')}
-            placeholder="55" />
-          
-        </Field>
-        <Field label="Default water rate" htmlFor="water_unit_price" hint="Optional fallback.">
-          <Input
-            id="water_unit_price"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.water_unit_price}
-            onChange={set('water_unit_price')}
-            placeholder="40" />
-          
-        </Field>
       </div>
-      <Field label="Notes" htmlFor="notes" hint="Optional — visible to staff only.">
-        <Textarea id="notes" value={form.notes} onChange={set('notes')} placeholder="Bathroom re-tiling in progress" />
+      <Field label="Note" htmlFor="note">
+        <Textarea id="note" value={form.note} onChange={set('note')} placeholder="Ground floor single room" />
       </Field>
-
-      {room && activeLeaseName &&
-      <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-subtle px-3 py-2.5">
-          <input
-          type="checkbox"
-          className="mt-0.5 h-4 w-4 accent-brand-600"
-          checked={applyToLease}
-          onChange={(event) => setApplyToLease(event.target.checked)} />
-        
-          <span className="min-w-0">
-            <span className="block text-[13px] font-medium text-ink">Apply to {activeLeaseName}&apos;s active lease</span>
-            <span className="block text-[12px] leading-relaxed text-ink-muted">
-              Updates the rent and monthly deposit deduction used on their next bill. The deposit they already paid is left
-              untouched.
-            </span>
-          </span>
-        </label>
-      }
     </FormModal>);
 
 }

@@ -22,7 +22,6 @@ interface FormState {
   phone: string;
   nic_number: string;
   address: string;
-  minimum_deposit_threshold: string;
 }
 
 const emptyState: FormState = {
@@ -31,16 +30,8 @@ const emptyState: FormState = {
   email: '',
   phone: '',
   nic_number: '',
-  address: '',
-  minimum_deposit_threshold: ''
+  address: ''
 };
-
-function thresholdError(value: string): string | undefined {
-  if (value.trim() === '') return 'Minimum deposit threshold is required.';
-  const amount = Number(value);
-  if (!Number.isFinite(amount) || amount < 0) return 'Enter an amount of 0 or more.';
-  return undefined;
-}
 
 export function CustomerForm({ open, customer, pending, error, onClose, onSubmit }: CustomerFormProps) {
   const [form, setForm] = useState<FormState>(emptyState);
@@ -59,11 +50,7 @@ export function CustomerForm({ open, customer, pending, error, onClose, onSubmit
         email: customer.email ?? '',
         phone: customer.phone ?? '',
         nic_number: customer.nic_number ?? '',
-        address: customer.address ?? '',
-        minimum_deposit_threshold:
-        customer.minimum_deposit_threshold === undefined || customer.minimum_deposit_threshold === null ?
-        '' :
-        String(Number(customer.minimum_deposit_threshold))
+        address: customer.address ?? ''
       } :
       emptyState
     );
@@ -75,7 +62,6 @@ export function CustomerForm({ open, customer, pending, error, onClose, onSubmit
   const handleSubmit = () => {
     setTouched(true);
     if (!form.first_name.trim() || !form.last_name.trim() || !form.nic_number.trim()) return;
-    if (thresholdError(form.minimum_deposit_threshold)) return;
     if (contacts.some((draft) => Object.values(contactRowErrors(draft)).some(Boolean))) return;
     onSubmit(
       {
@@ -84,8 +70,7 @@ export function CustomerForm({ open, customer, pending, error, onClose, onSubmit
         email: form.email.trim(),
         phone: form.phone.trim(),
         nic_number: form.nic_number.trim(),
-        address: form.address.trim(),
-        minimum_deposit_threshold: Number(form.minimum_deposit_threshold).toFixed(2)
+        address: form.address.trim()
       },
       contacts
     );
@@ -97,7 +82,6 @@ export function CustomerForm({ open, customer, pending, error, onClose, onSubmit
       onClose={onClose}
       onSubmit={handleSubmit}
       title={customer ? `Edit ${customer.first_name} ${customer.last_name}` : 'Add customer'}
-      description="Customer records are reused across leases, bills and payment history."
       submitLabel={customer ? 'Save changes' : 'Create customer'}
       pending={pending}
       error={error}>
@@ -136,23 +120,6 @@ export function CustomerForm({ open, customer, pending, error, onClose, onSubmit
       </div>
       <Field label="Address" htmlFor="address">
         <Textarea id="address" value={form.address} onChange={set('address')} placeholder="42 Galle Road, Colombo 04" />
-      </Field>
-      <Field
-        label="Minimum deposit threshold"
-        htmlFor="minimum_deposit_threshold"
-        required
-        hint="Monthly deposit deductions stop once the remaining deposit is at or below this amount. The rest is held until move-out to cover repairs."
-        error={touched ? thresholdError(form.minimum_deposit_threshold) : undefined}>
-        
-        <Input
-          id="minimum_deposit_threshold"
-          type="number"
-          min="0"
-          step="0.01"
-          value={form.minimum_deposit_threshold}
-          onChange={set('minimum_deposit_threshold')}
-          placeholder="10000" />
-        
       </Field>
       <ImmediateContactsEditor contacts={contacts} touched={touched} onChange={setContacts} />
     </FormModal>);

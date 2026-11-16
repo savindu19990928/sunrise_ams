@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { InfoIcon } from 'lucide-react';
 import type { MonthlyUtilityRow } from '../../types';
 import type { ApiError } from '../../utils/api';
 import { formatCurrency, formatMonth, toNumber, today } from '../../utils/format';
@@ -25,7 +24,6 @@ export function UtilityPaymentModal({ row, month, pending, error, onClose, onSub
   const [touched, setTouched] = useState(false);
 
   const remaining = row ? utilityRemaining(row) : 0;
-  const credit = toNumber(row?.room_credit_balance);
 
   useEffect(() => {
     if (!row) return;
@@ -103,26 +101,13 @@ export function UtilityPaymentModal({ row, month, pending, error, onClose, onSub
         label="Supplier receipt reference"
         htmlFor="up_reference"
         required
-        error={touched ? referenceError : undefined}
-        hint="CEB / Water Board receipt or bank transfer ID the customer gave you.">
+        error={touched ? referenceError : undefined}>
         
         <Input id="up_reference" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="CEB-ONLINE-TXN-998822" />
       </Field>
       <Field label="Notes" htmlFor="up_notes">
         <Textarea id="up_notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
       </Field>
-
-      <div className="flex items-start gap-2.5 rounded-lg border border-brand-100 bg-brand-50 px-3 py-2.5 text-[13px] leading-relaxed text-brand-700">
-        <InfoIcon className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
-        <span>
-          Recorded in the utility ledger only — never as rent or income.
-          {excess > 0 ?
-          ` The extra ${formatCurrency(excess)} is added to Room ${row?.room_number}'s credit and used on its next utility bills.` :
-          credit > 0 ?
-          ` Room ${row?.room_number} already holds ${formatCurrency(credit)} advance credit.` :
-          ''}
-        </span>
-      </div>
     </FormModal>);
 
 }

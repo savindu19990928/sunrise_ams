@@ -116,8 +116,8 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
   const depositPaid = lease ? toNumber(lease.deposit_paid) : null;
   const primaryContact = customer?.immediate_contacts?.[0];
   const current = history.find((row) => row.isCurrent);
-  const electricityRate = current?.electricityRate ?? toNumber(room?.electricity_unit_price);
-  const waterRate = current?.waterRate ?? toNumber(room?.water_unit_price);
+  const electricityRate = current?.electricityRate ?? 0;
+  const waterRate = current?.waterRate ?? 0;
   const usageLabel = (units: number | null | undefined, rate: number) =>
   units === null || units === undefined ?
   rate ?
