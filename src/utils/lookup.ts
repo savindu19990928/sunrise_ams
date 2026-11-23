@@ -1,6 +1,6 @@
 import type { Bill, BillStatus, Customer, ID, Lease, Room, RoomStatus } from '../types';
 
-export function mapById<T extends {id: ID;}>(items: T[]): Map<ID, T> {
+export function mapById<T extends { id: ID; }>(items: T[]): Map<ID, T> {
   return new Map(items.map((item) => [item.id, item]));
 }
 
@@ -49,8 +49,8 @@ export function nextDeduction(lease: Lease | undefined | null, threshold = 0): n
 }
 
 /**
- * Rent the tenant owes the business for a bill: rent less the deposit deduction.
- * Utilities are never part of it — tenants pay those directly to the supplier.
+ * Rent the tenant owes the property manager for a bill: rent less the deposit deduction.
+ * Electricity and water are paid separately and directly to their respective suppliers.
  */
 export function billRentDue(bill: Bill): number {
   if (bill.net_rent !== undefined && bill.net_rent !== null && bill.net_rent !== '') {
@@ -59,13 +59,29 @@ export function billRentDue(bill: Bill): number {
   return Math.max(0, Number(bill.rent ?? 0) - Number(bill.deposit_deduction ?? 0));
 }
 
-/** Utility charges shown on a bill for reference only — settled with the supplier. */
-export function billUtilities(bill: Bill): number {
-  return Number(bill.electricity ?? 0) + Number(bill.water ?? 0);
+/** Electricity balance still payable directly to the electricity supplier (CEB). */
+export function billElectricityRemaining(bill: Bill): number {
+  const direct = bill.payable_to_electricity_supplier ?? bill.electricity_remaining_balance;
+  if (direct !== undefined && direct !== null && direct !== '') {
+    return Math.max(0, Number(direct) || 0);
+  }
+  return Math.max(0, Number(bill.electricity ?? 0) - Number(bill.electricity_paid ?? 0));
 }
 
-/** Rent still owed on a bill. */
+/** Water balance still payable directly to the water supplier (NWSDB). */
+export function billWaterRemaining(bill: Bill): number {
+  const direct = bill.payable_to_water_supplier ?? bill.water_remaining_balance;
+  if (direct !== undefined && direct !== null && direct !== '') {
+    return Math.max(0, Number(direct) || 0);
+  }
+  return Math.max(0, Number(bill.water ?? 0) - Number(bill.water_paid ?? 0));
+}
+
+/** Rent still owed on a bill to the property manager. */
 export function billOutstanding(bill: Bill): number {
+  if (bill.remaining_balance !== undefined && bill.remaining_balance !== null && bill.remaining_balance !== '') {
+    return Math.max(0, Number(bill.remaining_balance) || 0);
+  }
   return Math.max(0, billRentDue(bill) - Number(bill.amount_paid ?? 0));
 }
 

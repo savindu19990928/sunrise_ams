@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { BanknoteIcon, DownloadIcon, ExternalLinkIcon, PrinterIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Bill } from '../../types';
@@ -7,10 +7,16 @@ import {
   buildBillBundle,
   downloadBillPdf,
   previewBillPdf,
-  printBillPdf } from
-'../../utils/billPdf';
+  printBillPdf
+} from '../../utils/billPdf';
 import { formatCurrency, formatDate, formatMonth, titleCase, toNumber } from '../../utils/format';
-import { billOutstanding, billRentDue, billStatus, billUtilities } from '../../utils/lookup';
+import {
+  billElectricityRemaining,
+  billOutstanding,
+  billRentDue,
+  billStatus,
+  billWaterRemaining
+} from '../../utils/lookup';
 import { BRAND_NAME, BRAND_TAGLINE } from '../../utils/pdf';
 import { formatPerDay, formatUnits } from '../../utils/utilityUsage';
 import { Badge, type BadgeTone } from '../ui/Badge';
@@ -35,34 +41,36 @@ function usageText(units: number | null | undefined, month: string): string {
   return ` · ${formatUnits(units)} units · ${formatPerDay(units, month)}`;
 }
 
-function HistoryCell({ cost, units, month }: {cost: number | null;units: number | null;month: string;}) {
+function HistoryCell({ cost, units, month }: { cost: number | null; units: number | null; month: string; }) {
   if (cost === null) return <span className="text-ink-muted">Not recorded</span>;
   return (
     <>
       <span className="block text-ink">{formatCurrency(cost)}</span>
-      {units !== null &&
-      <span className="block whitespace-nowrap text-[11px] text-ink-muted">
+      {units !== null && (
+        <span className="block whitespace-nowrap text-[11px] text-ink-muted">
           {formatUnits(units)} units · {formatPerDay(units, month)}
         </span>
-      }
-    </>);
-
+      )}
+    </>
+  );
 }
 
-function Line({ label, value, muted = false }: {label: string;value: string;muted?: boolean;}) {
+function Line({ label, value, muted = false }: { label: string; value: string; muted?: boolean; }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
       <dt className={muted ? 'text-[13px] text-ink-soft' : 'text-[13px] text-ink-muted'}>{label}</dt>
       <dd className={muted ? 'text-[13px] text-ink-soft' : 'text-sm text-ink'}>{value}</dd>
-    </div>);
-
+    </div>
+  );
 }
 
 export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: BillDetailModalProps) {
   const outstanding = bill ? billOutstanding(bill) : 0;
   const deduction = bill ? toNumber(bill.deposit_deduction) : 0;
-  const bundle = useMemo(() => bill ? buildBillBundle(bill, sources) : null, [bill, sources]);
+  const bundle = useMemo(() => (bill ? buildBillBundle(bill, sources) : null), [bill, sources]);
   const current = bundle?.history.find((row) => row.isCurrent);
+  const elecRemaining = bill ? billElectricityRemaining(bill) : 0;
+  const waterRemaining = bill ? billWaterRemaining(bill) : 0;
 
   const handleDownload = () => {
     if (!bundle) return;
@@ -83,10 +91,14 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
       open={Boolean(bill)}
       onClose={onClose}
       title={bill ? `Bill #${bill.id}` : 'Bill'}
-      description={bill ? `${bill.customer_name ?? 'Tenant'} · Room ${bill.room_number ?? '—'} · ${formatMonth(bill.billing_month)}` : undefined}
+      description={
+        bill
+          ? `${bill.customer_name ?? 'Tenant'} · Room ${bill.room_number ?? '—'} · ${formatMonth(bill.billing_month)}`
+          : undefined
+      }
       size="md"
       footer={
-      <>
+        <>
           <Button variant="secondary" icon={ExternalLinkIcon} onClick={handlePreview}>
             Preview
           </Button>
@@ -96,22 +108,22 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
           <Button variant="secondary" icon={DownloadIcon} onClick={handleDownload}>
             Download
           </Button>
-          {bill && outstanding > 0 &&
-        <Button icon={BanknoteIcon} onClick={() => onRecordPayment(bill)}>
+          {bill && outstanding > 0 && (
+            <Button icon={BanknoteIcon} onClick={() => onRecordPayment(bill)}>
               Record rent payment
             </Button>
-        }
+          )}
         </>
-      }>
-      
-      {bill &&
-      <div className="rounded-xl border border-bill-line bg-bill-paper p-4 sm:p-5">
+      }
+    >
+      {bill && (
+        <div className="rounded-xl border border-bill-line bg-bill-paper p-4 sm:p-5">
           <div className="flex items-start justify-between gap-4 border-b border-bill-line pb-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <span
-              className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-bill-accent text-sm font-bold text-white"
-              aria-hidden="true">
-              
+                className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-bill-accent text-sm font-bold text-white"
+                aria-hidden="true"
+              >
                 S
               </span>
               <div className="min-w-0">
@@ -134,14 +146,14 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
             <div className="overflow-hidden rounded-xl border border-bill-line bg-surface/70">
               <dl className="divide-y divide-bill-line px-4">
                 <Line label="Room rent" value={formatCurrency(bill.rent)} />
-                {deduction > 0 ?
-              <Line label="Less deposit deduction" value={`− ${formatCurrency(deduction)}`} /> :
-
-              <Line label="Deposit deduction — minimum deposit reached" value="None" muted />
-              }
+                {deduction > 0 ? (
+                  <Line label="Less deposit deduction" value={`− ${formatCurrency(deduction)}`} />
+                ) : (
+                  <Line label="Deposit deduction — minimum deposit reached" value="None" muted />
+                )}
               </dl>
               <div className="flex items-baseline justify-between gap-4 border-t border-bill-line bg-bill-tint px-4 py-3">
-                <p className="text-sm font-medium text-ink">Rent payable</p>
+                <p className="text-sm font-medium text-ink">Rent payable to property manager</p>
                 <p className="text-[22px] font-semibold tracking-[-0.02em] text-bill-accent">
                   {formatCurrency(billRentDue(bill))}
                 </p>
@@ -163,23 +175,56 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
 
             <div>
               <div className="flex items-baseline justify-between gap-3">
-                <h3 className="text-[13px] font-medium text-ink">Utilities this month</h3>
-                <p className="text-[12px] text-ink-muted">Paid directly to the supplier</p>
+                <h3 className="text-[13px] font-medium text-ink">Electricity this month</h3>
+                <p className="text-[12px] text-ink-muted">Paid directly to electricity supplier (CEB)</p>
               </div>
               <dl className="mt-1 divide-y divide-bill-line rounded-xl border border-bill-line bg-surface/70 px-4">
-                <Line label={`Electricity${usageText(current?.electricityUnits, bill.billing_month)}`} value={formatCurrency(bill.electricity)} />
-                <Line label={`Water${usageText(current?.waterUnits, bill.billing_month)}`} value={formatCurrency(bill.water)} />
+                <Line
+                  label={`Charge${usageText(current?.electricityUnits, bill.billing_month)}`}
+                  value={formatCurrency(bill.electricity)}
+                />
+                {bill.electricity_paid !== undefined &&
+                  bill.electricity_paid !== null &&
+                  toNumber(bill.electricity_paid) > 0 && (
+                    <Line label="Paid to CEB" value={formatCurrency(bill.electricity_paid)} />
+                  )}
                 <div className="flex items-baseline justify-between gap-4 py-2.5">
-                  <dt className="text-sm font-medium text-ink">Pay to supplier</dt>
-                  <dd className="text-sm font-semibold text-ink">{formatCurrency(billUtilities(bill))}</dd>
+                  <dt className="text-sm font-medium text-ink">Payable to CEB</dt>
+                  <dd className={`text-sm font-semibold ${elecRemaining > 0 ? 'text-ink' : 'text-success-600'}`}>
+                    {formatCurrency(elecRemaining)}
+                  </dd>
                 </div>
               </dl>
             </div>
 
-            {bundle &&
-          <div>
+            <div>
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-[13px] font-medium text-ink">Water this month</h3>
+                <p className="text-[12px] text-ink-muted">Paid directly to water supplier (NWSDB)</p>
+              </div>
+              <dl className="mt-1 divide-y divide-bill-line rounded-xl border border-bill-line bg-surface/70 px-4">
+                <Line
+                  label={`Charge${usageText(current?.waterUnits, bill.billing_month)}`}
+                  value={formatCurrency(bill.water)}
+                />
+                {bill.water_paid !== undefined &&
+                  bill.water_paid !== null &&
+                  toNumber(bill.water_paid) > 0 && (
+                    <Line label="Paid to NWSDB" value={formatCurrency(bill.water_paid)} />
+                  )}
+                <div className="flex items-baseline justify-between gap-4 py-2.5">
+                  <dt className="text-sm font-medium text-ink">Payable to NWSDB</dt>
+                  <dd className={`text-sm font-semibold ${waterRemaining > 0 ? 'text-ink' : 'text-success-600'}`}>
+                    {formatCurrency(waterRemaining)}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            {bundle && (
+              <div>
                 <div className="flex items-baseline justify-between gap-3">
-                  <h3 className="text-[13px] font-medium text-ink">Utility history</h3>
+                  <h3 className="text-[13px] font-medium text-ink">Electricity &amp; water history</h3>
                   <p className="text-[12px] text-ink-muted">Included in the PDF</p>
                 </div>
                 <table className="mt-2 w-full text-[13px]">
@@ -197,33 +242,37 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-bill-line">
-                    {bundle.history.map((row) =>
-                <tr key={row.monthKey}>
+                    {bundle.history.map((row) => (
+                      <tr key={row.monthKey}>
                         <td className={`py-1.5 ${row.isCurrent ? 'font-medium text-ink' : 'text-ink-muted'}`}>
                           {formatMonth(`${row.monthKey}-01`)}
                           {row.isCurrent && <span className="ml-1.5 text-[11px] text-ink-muted">this bill</span>}
                         </td>
                         <td className="py-1.5 text-right align-top">
-                          <HistoryCell cost={row.electricity} units={row.electricityUnits} month={`${row.monthKey}-01`} />
+                          <HistoryCell
+                            cost={row.electricity}
+                            units={row.electricityUnits}
+                            month={`${row.monthKey}-01`}
+                          />
                         </td>
                         <td className="py-1.5 text-right align-top">
                           <HistoryCell cost={row.water} units={row.waterUnits} month={`${row.monthKey}-01`} />
                         </td>
                       </tr>
-                )}
+                    ))}
                   </tbody>
                 </table>
               </div>
-          }
+            )}
 
             <p className="text-[12px] leading-relaxed text-ink-muted">
-              {deduction > 0 ?
-            `${formatCurrency(deduction)} of this month's rent is covered by the deposit. Deductions stop once the deposit balance falls to the lease's minimum deposit threshold — from then on the full rent is payable.` :
-            "The deposit balance has reached the lease's minimum deposit threshold, so no deduction applies and the full rent is payable."}
+              {deduction > 0
+                ? `${formatCurrency(deduction)} of this month's rent is covered by the deposit. Deductions stop once the deposit balance falls to the lease's minimum deposit threshold — from then on the full rent is payable.`
+                : "The deposit balance has reached the lease's minimum deposit threshold, so no deduction applies and the full rent is payable."}
             </p>
           </div>
         </div>
-      }
-    </Modal>);
-
+      )}
+    </Modal>
+  );
 }

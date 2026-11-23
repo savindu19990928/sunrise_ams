@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2Icon, InfoIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ID } from '../../types';
@@ -12,7 +12,7 @@ interface GenerateBillsModalProps {
   open: boolean;
   onClose: () => void;
   onDone: () => void;
-  missingUtilityRooms?: (month: string) => string[];
+  missingServiceRooms?: (month: string) => { electricity: string[]; water: string[]; };
 }
 
 interface GenerateResponse {
@@ -20,7 +20,7 @@ interface GenerateResponse {
   bill_ids?: ID[];
 }
 
-export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms }: GenerateBillsModalProps) {
+export function GenerateBillsModal({ open, onClose, onDone, missingServiceRooms }: GenerateBillsModalProps) {
   const [month, setMonth] = useState(monthInputValue(firstOfCurrentMonth()));
   const [regenerate, setRegenerate] = useState(false);
   const [reason, setReason] = useState('');
@@ -38,7 +38,7 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
   }, [open]);
 
   const billingMonth = month ? `${month}-01` : firstOfCurrentMonth();
-  const missing = missingUtilityRooms?.(billingMonth) ?? [];
+  const missing = missingServiceRooms?.(billingMonth) ?? { electricity: [], water: [] };
 
   const handleGenerate = async () => {
     setPending(true);
@@ -70,10 +70,10 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
       title={result ? 'Bills generated' : 'Generate monthly bills'}
       size="md"
       footer={
-      result ?
-      <Button onClick={onClose}>Done</Button> :
-
-      <>
+        result ? (
+          <Button onClick={onClose}>Done</Button>
+        ) : (
+          <>
             <Button variant="secondary" onClick={onClose} disabled={pending}>
               Cancel
             </Button>
@@ -81,28 +81,28 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
               Generate bills
             </Button>
           </>
-
-      }>
-      
-      {result ?
-      <div className="flex flex-col items-center gap-3 py-4 text-center">
+        )
+      }
+    >
+      {result ? (
+        <div className="flex flex-col items-center gap-3 py-4 text-center">
           <span className="flex h-11 w-11 items-center justify-center rounded-full bg-success-50 text-success-600">
             <CheckCircle2Icon className="h-5 w-5" aria-hidden="true" />
           </span>
           <p className="text-sm font-medium text-ink">{result.message ?? 'Bills generated.'}</p>
           <p className="text-[13px] text-ink-muted">
-            {result.bill_ids?.length ?
-          `Bill IDs: ${result.bill_ids.join(', ')}` :
-          'No new bills were needed for this month.'}
+            {result.bill_ids?.length
+              ? `Bill IDs: ${result.bill_ids.join(', ')}`
+              : 'No new bills were needed for this month.'}
           </p>
-        </div> :
-
-      <div className="space-y-4">
-          {error &&
-        <div role="alert" className="rounded-lg border border-danger-100 bg-danger-50 px-3 py-2.5 text-[13px] text-danger-700">
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {error && (
+            <div role="alert" className="rounded-lg border border-danger-100 bg-danger-50 px-3 py-2.5 text-[13px] text-danger-700">
               {error.message}
             </div>
-        }
+          )}
           <Field label="Billing month" htmlFor="billing_month" required>
             <Input id="billing_month" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
           </Field>
@@ -112,31 +112,45 @@ export function GenerateBillsModal({ open, onClose, onDone, missingUtilityRooms 
               type="checkbox"
               className="h-4 w-4 accent-brand-600"
               checked={regenerate}
-              onChange={(event) => setRegenerate(event.target.checked)} />
+              onChange={(event) => setRegenerate(event.target.checked)}
+            />
             <span className="text-[13px] font-medium text-ink">Regenerate / recorrect existing bills</span>
           </label>
 
-          {regenerate &&
-          <Field label="Recorrection reason" htmlFor="bill_recorrection_reason">
+          {regenerate && (
+            <Field label="Recorrection reason" htmlFor="bill_recorrection_reason">
               <Input
                 id="bill_recorrection_reason"
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
-                placeholder="Reason" />
+                placeholder="Reason"
+              />
             </Field>
-          }
+          )}
 
-          {missing.length > 0 &&
-        <div className="flex items-start gap-2.5 rounded-lg border border-warn-100 bg-warn-50 px-3 py-2.5 text-[13px] leading-relaxed text-warn-700">
+          {missing.electricity.length > 0 && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-warn-100 bg-warn-50 px-3 py-2.5 text-[13px] leading-relaxed text-warn-700">
               <InfoIcon className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
               <span>
-                Missing utility readings for {formatMonth(billingMonth)}: room{missing.length > 1 ? 's' : ''}{' '}
-                <span className="font-semibold">{missing.join(', ')}</span>.
+                Missing electricity readings for {formatMonth(billingMonth)}: room
+                {missing.electricity.length > 1 ? 's' : ''}{' '}
+                <span className="font-semibold">{missing.electricity.join(', ')}</span>.
               </span>
             </div>
-        }
-        </div>
-      }
-    </Modal>);
+          )}
 
+          {missing.water.length > 0 && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-warn-100 bg-warn-50 px-3 py-2.5 text-[13px] leading-relaxed text-warn-700">
+              <InfoIcon className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
+              <span>
+                Missing water readings for {formatMonth(billingMonth)}: room
+                {missing.water.length > 1 ? 's' : ''}{' '}
+                <span className="font-semibold">{missing.water.join(', ')}</span>.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
 }

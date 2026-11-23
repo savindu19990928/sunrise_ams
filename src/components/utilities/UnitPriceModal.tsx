@@ -1,51 +1,62 @@
-import React, { useEffect, useState } from 'react';
-import type { BuildingUtilityBill, MonthlyUtilityRow } from '../../types';
+import { useEffect, useState } from 'react';
+import type { NormalizedBuildingServiceBill, NormalizedServiceRow, ServiceKind } from '../../types';
 import type { ApiError } from '../../utils/api';
 import { formatCurrency, toNumber } from '../../utils/format';
+import { SERVICE_CONFIG } from '../../utils/serviceRecords';
 import { formatUnits } from '../../utils/utilityUsage';
 import { Button } from '../ui/Button';
 import { Field, Input } from '../ui/Field';
 import { FormModal } from '../ui/FormModal';
 
 interface UnitPriceModalProps {
-  row: MonthlyUtilityRow | null;
+  kind: ServiceKind;
+  row: NormalizedServiceRow | null;
   month: string;
-  buildingBill: BuildingUtilityBill | null;
+  buildingBill: NormalizedBuildingServiceBill | null;
   pending: boolean;
   error: ApiError | null;
   onClose: () => void;
-  onSubmit: (row: MonthlyUtilityRow, payload: Record<string, unknown>) => void;
+  onSubmit: (row: NormalizedServiceRow, payload: Record<string, unknown>) => void;
 }
 
-export function UnitPriceModal({ row, buildingBill, pending, error, onClose, onSubmit }: UnitPriceModalProps) {
-  const [electricity, setElectricity] = useState('');
-  const [water, setWater] = useState('');
+export function UnitPriceModal({
+  kind,
+  row,
+  buildingBill,
+  pending,
+  error,
+  onClose,
+  onSubmit
+}: UnitPriceModalProps) {
+  const config = SERVICE_CONFIG[kind];
+  const [rate, setRate] = useState('');
   const [useDefault, setUseDefault] = useState(false);
+  const [reason, setReason] = useState('');
   const [touched, setTouched] = useState(false);
 
   useEffect(() => {
     if (!row) return;
     setTouched(false);
     setUseDefault(false);
-    setElectricity(String(toNumber(row.electricity_unit_price)));
-    setWater(String(toNumber(row.water_unit_price)));
+    setRate(String(toNumber(row.unit_price)));
+    setReason('');
   }, [row]);
 
-  const electricityCost = toNumber(row?.electricity_units) * toNumber(electricity);
-  const waterCost = toNumber(row?.water_units) * toNumber(water);
-  const invalid = (value: string) => value === '' || toNumber(value) < 0 ? 'Enter a price of 0 or more.' : undefined;
+  const newCost = toNumber(row?.units) * toNumber(rate);
+  const invalid = (value: string) => (value === '' || toNumber(value) < 0 ? 'Enter a price of 0 or more.' : undefined);
 
   const handleSubmit = () => {
     setTouched(true);
     if (!row) return;
+    const reasonPart = reason.trim() ? { reason: reason.trim() } : {};
     if (useDefault) {
-      onSubmit(row, { use_default: true });
+      onSubmit(row, { use_default: true, ...reasonPart });
       return;
     }
-    if (invalid(electricity) || invalid(water)) return;
+    if (invalid(rate)) return;
     onSubmit(row, {
-      electricity_unit_price: toNumber(electricity).toFixed(2),
-      water_unit_price: toNumber(water).toFixed(2)
+      [config.unitPriceKey]: toNumber(rate).toFixed(2),
+      ...reasonPart
     });
   };
 
@@ -54,84 +65,63 @@ export function UnitPriceModal({ row, buildingBill, pending, error, onClose, onS
       open={Boolean(row)}
       onClose={onClose}
       onSubmit={handleSubmit}
-      title={row ? `Unit prices · Room ${row.room_number}` : 'Unit prices'}
-      submitLabel="Save prices"
+      title={row ? `${config.label} unit price · Room ${row.room_number}` : `${config.label} unit price`}
+      submitLabel="Save price"
       pending={pending}
       error={error}
-      size="sm">
-      
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field
-          label="Electricity / unit"
-          htmlFor="up_electricity"
-          error={touched && !useDefault ? invalid(electricity) : undefined}
-          hint={buildingBill ? `Default ${formatCurrency(buildingBill.electricity_unit_price)}` : undefined}>
-          
-          <Input
-            id="up_electricity"
-            type="number"
-            min="0"
-            step="0.01"
-            value={electricity}
-            onChange={(event) => {
-              setUseDefault(false);
-              setElectricity(event.target.value);
-            }} />
-          
-        </Field>
-        <Field
-          label="Water / unit"
-          htmlFor="up_water"
-          error={touched && !useDefault ? invalid(water) : undefined}
-          hint={buildingBill ? `Default ${formatCurrency(buildingBill.water_unit_price)}` : undefined}>
-          
-          <Input
-            id="up_water"
-            type="number"
-            min="0"
-            step="0.01"
-            value={water}
-            onChange={(event) => {
-              setUseDefault(false);
-              setWater(event.target.value);
-            }} />
-        </Field>
-      </div>
+      size="sm"
+    >
+      <Field
+        label={`${config.label} / unit`}
+        htmlFor="up_rate"
+        error={touched && !useDefault ? invalid(rate) : undefined}
+        hint={buildingBill ? `Default ${formatCurrency(buildingBill.unit_price)}` : undefined}
+      >
+        <Input
+          id="up_rate"
+          type="number"
+          min="0"
+          step="0.01"
+          value={rate}
+          onChange={(event) => {
+            setUseDefault(false);
+            setRate(event.target.value);
+          }}
+        />
+      </Field>
 
-      {buildingBill &&
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          setUseDefault(true);
-          setElectricity(String(toNumber(buildingBill.electricity_unit_price)));
-          setWater(String(toNumber(buildingBill.water_unit_price)));
-        }}>
-        
-          Reset to default rates
+      {buildingBill && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setUseDefault(true);
+            setRate(String(toNumber(buildingBill.unit_price)));
+          }}
+        >
+          Reset to default rate
         </Button>
-      }
+      )}
 
-      {row &&
-      <dl className="rounded-lg border border-line bg-subtle px-3 py-1 text-[13px]">
+      <Field label="Reason (optional)" htmlFor="up_reason">
+        <Input
+          id="up_reason"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Optional audit log note"
+        />
+      </Field>
+
+      {row && (
+        <dl className="rounded-lg border border-line bg-subtle px-3 py-1 text-[13px]">
           <div className="flex items-baseline justify-between gap-3 py-1.5">
             <dt className="text-ink-muted">
-              Electricity · {formatUnits(row.electricity_units)} × {formatCurrency(electricity)}
+              {config.label} · {formatUnits(row.units)} × {formatCurrency(rate)}
             </dt>
-            <dd className="text-ink">{formatCurrency(electricityCost)}</dd>
-          </div>
-          <div className="flex items-baseline justify-between gap-3 py-1.5">
-            <dt className="text-ink-muted">
-              Water · {formatUnits(row.water_units)} × {formatCurrency(water)}
-            </dt>
-            <dd className="text-ink">{formatCurrency(waterCost)}</dd>
-          </div>
-          <div className="flex items-baseline justify-between gap-3 border-t border-line py-2">
-            <dt className="font-medium text-ink">New room bill</dt>
-            <dd className="font-semibold text-ink">{formatCurrency(electricityCost + waterCost)}</dd>
+            <dd className="font-semibold text-ink">{formatCurrency(newCost)}</dd>
           </div>
         </dl>
-      }
-    </FormModal>);
-
+      )}
+    </FormModal>
+  );
 }

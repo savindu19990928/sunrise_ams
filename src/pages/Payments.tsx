@@ -108,7 +108,7 @@ export function Payments() {
     <div className="space-y-5">
       <PageHeader
         title="Rent payments"
-        description="Lease rent collected against each bill. Utility payments to suppliers are kept separately under Supplier payments."
+        description="Lease rent collected against each bill. Electricity and water payments to suppliers are kept separately under Electricity payments and Water payments."
         actions={
         <Button icon={BanknoteIcon} onClick={() => setPaymentOpen(true)}>
             Record rent payment

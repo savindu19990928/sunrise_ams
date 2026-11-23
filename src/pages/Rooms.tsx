@@ -97,7 +97,7 @@ export function Rooms() {
     <div className="space-y-5">
       <PageHeader
         title="Rooms"
-        description="Manage room numbers, room types and notes. Rent, deposits and utility rates are configured on leases and monthly bills."
+        description="Manage room numbers, room types and notes. Rent, deposits, electricity and water rates are configured on leases and monthly bills."
         actions={
           <Button
             icon={PlusIcon}

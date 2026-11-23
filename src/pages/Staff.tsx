@@ -149,7 +149,7 @@ export function Staff() {
           <Card className="p-4 sm:p-5">
             <h2 className="text-[15px] font-semibold text-ink">Access rules</h2>
             <ul className="mt-3 space-y-2.5 text-[13px] leading-relaxed text-ink-muted">
-              <li>Staff accounts can manage rooms, customers, leases, utilities, bills and payments.</li>
+              <li>Staff accounts can manage rooms, customers, leases, electricity, water, bills and payments.</li>
               <li>Only superusers can create new staff accounts or see this screen.</li>
               <li>There is no tenant-facing portal — every action here is performed by your team.</li>
             </ul>

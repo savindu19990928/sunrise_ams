@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DownloadIcon, FileTextIcon, PlayIcon, TableIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,7 +7,7 @@ import { useCollection, useResource } from '../hooks/useResource';
 import { ProfitChart } from '../components/reports/ProfitChart';
 import { type ReportRow, ReportTable } from '../components/reports/ReportTable';
 import { ApiErrorState } from '../components/ui/ApiErrorState';
-import { Badge } from '../components/ui/Badge';
+import { Badge, type BadgeTone } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { Field, Input, Select } from '../components/ui/Field';
@@ -29,24 +29,97 @@ interface ReportDefinition {
 }
 
 const reports: ReportDefinition[] = [
-{ type: 'profits', label: 'Profits', description: 'Rent revenue less repair costs, with per-room profit. Utility payments to suppliers are excluded.' },
-{ type: 'customer-room-fee-payments', label: 'Customer room fee payments', description: 'Room fee payments made by a specific customer to the property owner.', needsCustomer: true },
-{ type: 'customer-utility-payments', label: 'Customer utility payments', description: 'Utility bill payments made by a specific customer to the utility supplier.', needsCustomer: true },
-{ type: 'all-room-fee-payments', label: 'All room fee payments', description: 'All customers’ room fee payments paid to the property owner in the period.' },
-{ type: 'all-utility-payments', label: 'All utility payments', description: 'All customers’ utility bill payments paid to the utility supplier in the period.' },
-{ type: 'unpaid-room-fee-bills', label: 'Unpaid room fee bills', description: 'All unpaid room fee bills across all customers with remaining balances.' },
-{ type: 'unpaid-utility-bills', label: 'Unpaid utility bills', description: 'All unpaid utility bills across all customers with remaining balances.' },
-{ type: 'recorrection-logs', label: 'Bill recorrection audit log', description: 'Immutable audit log of every utility and room fee bill recorrection.', supportsCategoryFilter: true },
-{ type: 'room-data', label: 'Room data', description: 'Current list of rooms: room number, room type, note and utility credit balance.' },
-{ type: 'customer-details', label: 'Customer details', description: 'Contact details with deposit paid and total payments in the period.' },
-{ type: 'this-month-charges', label: 'Charges', description: 'Room fee bills generated in the period with their full breakdown.' },
-{ type: 'room-repairs', label: 'Room repairs', description: 'Repair costs broken down by room.' },
-{
-  type: 'utility-payments',
-  label: 'Utility payments summary',
-  description: 'Combined utility supplier payments summary with room breakdown and unpaid records.'
-}];
-
+  {
+    type: 'profits',
+    label: 'Profits',
+    description:
+      'Rent revenue less repair costs, with per-room profit. Electricity and water supplier payments are excluded.'
+  },
+  {
+    type: 'customer-room-fee-payments',
+    label: 'Customer room fee payments',
+    description: 'Room fee payments made by a specific customer to the property owner.',
+    needsCustomer: true
+  },
+  {
+    type: 'customer-electricity-payments',
+    label: 'Customer electricity payments',
+    description: 'Electricity bill payments made by a specific customer directly to the electricity supplier (CEB).',
+    needsCustomer: true
+  },
+  {
+    type: 'customer-water-payments',
+    label: 'Customer water payments',
+    description: 'Water bill payments made by a specific customer directly to the water supplier (NWSDB).',
+    needsCustomer: true
+  },
+  {
+    type: 'all-room-fee-payments',
+    label: 'All room fee payments',
+    description: 'All customers’ room fee payments paid to the property owner in the period.'
+  },
+  {
+    type: 'all-electricity-payments',
+    label: 'All electricity payments',
+    description: 'All customers’ electricity bill payments paid to the electricity supplier in the period.'
+  },
+  {
+    type: 'all-water-payments',
+    label: 'All water payments',
+    description: 'All customers’ water bill payments paid to the water supplier in the period.'
+  },
+  {
+    type: 'unpaid-room-fee-bills',
+    label: 'Unpaid room fee bills',
+    description: 'All unpaid room fee bills across all customers with remaining balances.'
+  },
+  {
+    type: 'unpaid-electricity-bills',
+    label: 'Unpaid electricity bills',
+    description: 'All unpaid electricity bills across all customers with remaining balances.'
+  },
+  {
+    type: 'unpaid-water-bills',
+    label: 'Unpaid water bills',
+    description: 'All unpaid water bills across all customers with remaining balances.'
+  },
+  {
+    type: 'recorrection-logs',
+    label: 'Bill recorrection audit log',
+    description: 'Immutable audit log of every electricity, water, and room fee bill recorrection.',
+    supportsCategoryFilter: true
+  },
+  {
+    type: 'room-data',
+    label: 'Room data',
+    description: 'Current list of rooms: room number, room type, note, electricity credit balance and water credit balance.'
+  },
+  {
+    type: 'customer-details',
+    label: 'Customer details',
+    description: 'Contact details with deposit paid and total room-fee payments in the period.'
+  },
+  {
+    type: 'this-month-charges',
+    label: 'Charges',
+    description: 'Room fee bills generated in the period with their full breakdown.'
+  },
+  {
+    type: 'room-repairs',
+    label: 'Room repairs',
+    description: 'Repair costs broken down by room.'
+  },
+  {
+    type: 'electricity-payments',
+    label: 'Electricity payments summary',
+    description: 'Electricity supplier payments summary with room breakdown and unpaid electricity records.'
+  },
+  {
+    type: 'water-payments',
+    label: 'Water payments summary',
+    description: 'Water supplier payments summary with room breakdown and unpaid water records.'
+  }
+];
 
 const NUMERIC_STRING = /^-?\d+(\.\d+)?$/;
 
@@ -55,7 +128,16 @@ function findRows(payload: unknown): ReportRow[] {
   if (Array.isArray(payload)) return payload as ReportRow[];
   if (typeof payload !== 'object') return [];
   const record = payload as Record<string, unknown>;
-  for (const key of ['results', 'payments', 'unpaid_bills', 'logs']) {
+  for (const key of [
+    'results',
+    'payments',
+    'unpaid_bills',
+    'unpaid_electricity_bills',
+    'unpaid_water_bills',
+    'unpaid_electricity_records',
+    'unpaid_water_records',
+    'logs'
+  ]) {
     if (Array.isArray(record[key])) return record[key] as ReportRow[];
   }
   for (const value of Object.values(record)) {
@@ -64,40 +146,55 @@ function findRows(payload: unknown): ReportRow[] {
   return [];
 }
 
-function findBreakdown(payload: unknown): {label: string;data: Record<string, number>;} | null {
+function findBreakdown(payload: unknown): { label: string; data: Record<string, number>; } | null {
   if (!payload || typeof payload !== 'object') return null;
   const record = payload as Record<string, unknown>;
   for (const [key, value] of Object.entries(record)) {
-    if (
-    value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.values(value as Record<string, unknown>).every((item) => typeof item === 'number'))
-    {
-      const entries = Object.entries(value as Record<string, number>);
-      if (entries.length) return { label: titleCase(key), data: value as Record<string, number> };
+    if (key === 'period') continue;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const entries = Object.entries(value as Record<string, unknown>);
+      if (!entries.length) continue;
+      const numericData: Record<string, number> = {};
+      const allNumeric = entries.every(([entryKey, item]) => {
+        if (typeof item === 'number' && Number.isFinite(item)) {
+          numericData[entryKey] = item;
+          return true;
+        }
+        if (typeof item === 'string' && NUMERIC_STRING.test(item)) {
+          numericData[entryKey] = Number(item);
+          return true;
+        }
+        return false;
+      });
+      if (allNumeric) {
+        return { label: titleCase(key), data: numericData };
+      }
     }
   }
   return null;
 }
 
-function findTotals(payload: unknown): {key: string;value: number;}[] {
+function findTotals(payload: unknown): { key: string; value: number; }[] {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
   const record = payload as Record<string, unknown>;
   const skipAliases = new Set<string>();
   if ('total_profit' in record) skipAliases.add('net_profit');
   if ('total_revenue' in record) skipAliases.add('lease_revenue');
   if ('total_expenses' in record) skipAliases.add('total_repair_costs');
-  if ('total_paid_to_suppliers' in record) skipAliases.add('total_utility_payments_to_suppliers');
-  return Object.entries(record).
-  filter(
-    ([key, value]) =>
-    !skipAliases.has(key) &&
-    (typeof value === 'number' || typeof value === 'string' && NUMERIC_STRING.test(value)) &&
-    /total|profit|revenue|repair|expense|utility|unpaid/i.test(key) &&
-    !/count/i.test(key)
-  ).
-  map(([key, value]) => ({ key, value: Number(value) }));
+  if ('total_paid_to_suppliers' in record || 'total_paid_to_supplier' in record) {
+    skipAliases.add('total_utility_payments_to_suppliers');
+    skipAliases.add('total_electricity_payments_to_suppliers');
+    skipAliases.add('total_water_payments_to_suppliers');
+  }
+  return Object.entries(record)
+    .filter(
+      ([key, value]) =>
+        !skipAliases.has(key) &&
+        (typeof value === 'number' || (typeof value === 'string' && NUMERIC_STRING.test(value))) &&
+        /total|profit|revenue|repair|expense|electricity|water|unpaid|excluded/i.test(key) &&
+        !/count|units|reading|_id$/i.test(key)
+    )
+    .map(([key, value]) => ({ key, value: Number(value) }));
 }
 
 function findNote(payload: unknown): string | null {
@@ -106,10 +203,34 @@ function findNote(payload: unknown): string | null {
   return typeof note === 'string' ? note : null;
 }
 
-function findUnpaidUtilities(payload: unknown): ReportRow[] {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
-  const value = (payload as Record<string, unknown>).unpaid_utility_records;
-  return Array.isArray(value) ? value as ReportRow[] : [];
+function findUnpaidServiceRecords(
+  active: ReportType,
+  payload: unknown
+): { label: string; rows: ReportRow[]; } {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return { label: '', rows: [] };
+  const record = payload as Record<string, unknown>;
+  if (active === 'electricity-payments') {
+    const value = record.unpaid_electricity_records;
+    return {
+      label: 'electricity',
+      rows: Array.isArray(value) ? (value as ReportRow[]) : []
+    };
+  }
+  if (active === 'water-payments') {
+    const value = record.unpaid_water_records;
+    return {
+      label: 'water',
+      rows: Array.isArray(value) ? (value as ReportRow[]) : []
+    };
+  }
+  return { label: '', rows: [] };
+}
+
+function recipientBadge(recipient: string): { label: string; tone: BadgeTone; } {
+  if (recipient === 'property_owner') return { label: 'Property owner', tone: 'brand' };
+  if (recipient === 'electricity_supplier') return { label: 'Electricity supplier (CEB)', tone: 'warn' };
+  if (recipient === 'water_supplier') return { label: 'Water supplier (NWSDB)', tone: 'neutral' };
+  return { label: titleCase(recipient), tone: 'neutral' };
 }
 
 export function Reports() {
@@ -132,9 +253,19 @@ export function Reports() {
 
   useEffect(() => {
     const requested = searchParams.get('type') as ReportType | null;
+    const category = searchParams.get('category');
+    let changed = false;
     if (requested && reports.some((r) => r.type === requested)) {
       setActive(requested);
       searchParams.delete('type');
+      changed = true;
+    }
+    if (category && ['electricity', 'water', 'room_fee'].includes(category)) {
+      setBillCategory(category);
+      searchParams.delete('category');
+      changed = true;
+    }
+    if (changed) {
       setSearchParams(searchParams, { replace: true });
     }
   }, [searchParams, setSearchParams]);
@@ -156,17 +287,20 @@ export function Reports() {
 
   // Average per-day usage is derived here and placed right after each usage column.
   const rows = useMemo(() => withDailyAverages(flattenReportRows(active, findRows(data))), [active, data]);
-  const unpaidUtilities = useMemo(
-    () => active === 'utility-payments' ? withDailyAverages(findUnpaidUtilities(data)) : [],
-    [active, data]
-  );
+  const unpaidSection = useMemo(() => {
+    const found = findUnpaidServiceRecords(active, data);
+    return {
+      label: found.label,
+      rows: withDailyAverages(found.rows)
+    };
+  }, [active, data]);
   const breakdown = useMemo(() => findBreakdown(data), [data]);
   const totals = useMemo(() => findTotals(data), [data]);
   const note = useMemo(() => findNote(data), [data]);
   const period = useMemo(() => {
     if (!data || typeof data !== 'object') return null;
     const value = (data as Record<string, unknown>).period;
-    if (value && typeof value === 'object') return value as {start?: string;end?: string;};
+    if (value && typeof value === 'object') return value as { start?: string; end?: string; };
     return null;
   }, [data]);
   const meta = useMemo(() => {
@@ -204,35 +338,35 @@ export function Reports() {
         title="Reports"
         description="Run any report for a date range, then download it as a branded PDF or a spreadsheet-ready CSV."
         actions={
-        <>
+          <>
             <Button
-            variant="secondary"
-            icon={TableIcon}
-            disabled={!canExport}
-            onClick={() => {
-              downloadReportCsv(exportInput);
-              toast.success(`${definition.label} report downloaded as CSV`);
-            }}>
-            
+              variant="secondary"
+              icon={TableIcon}
+              disabled={!canExport}
+              onClick={() => {
+                downloadReportCsv(exportInput);
+                toast.success(`${definition.label} report downloaded as CSV`);
+              }}
+            >
               CSV
             </Button>
             <Button
-            variant="secondary"
-            icon={DownloadIcon}
-            disabled={!canExport}
-            onClick={() => {
-              downloadReportPdf(exportInput);
-              toast.success(`${definition.label} report downloaded as PDF`);
-            }}>
-            
+              variant="secondary"
+              icon={DownloadIcon}
+              disabled={!canExport}
+              onClick={() => {
+                downloadReportPdf(exportInput);
+                toast.success(`${definition.label} report downloaded as PDF`);
+              }}
+            >
               PDF
             </Button>
             <Button icon={PlayIcon} onClick={reload} loading={loading}>
               Run report
             </Button>
           </>
-        } />
-      
+        }
+      />
 
       {/* Report picker */}
       <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -246,14 +380,14 @@ export function Reports() {
                 onClick={() => setActive(report.type)}
                 aria-pressed={isActive}
                 className={`rounded-lg border px-3 py-2 text-[13px] font-medium transition-colors duration-150 ease-out ${
-                isActive ?
-                'border-brand-600 bg-brand-600 text-white' :
-                'border-line bg-surface text-ink-muted hover:bg-canvas hover:text-ink'}`
-                }>
-                
+                  isActive
+                    ? 'border-brand-600 bg-brand-600 text-white'
+                    : 'border-line bg-surface text-ink-muted hover:bg-canvas hover:text-ink'
+                }`}
+              >
                 {report.label}
-              </button>);
-
+              </button>
+            );
           })}
         </div>
       </div>
@@ -263,7 +397,7 @@ export function Reports() {
           title={definition.label}
           description={definition.description}
           actions={
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
               <Field label="Month" htmlFor="report_month" className="sm:w-40">
                 <Input id="report_month" type="month" value={monthFilter} onChange={(event) => handleMonthChange(event.target.value)} />
               </Field>
@@ -275,7 +409,8 @@ export function Reports() {
                   onChange={(event) => {
                     setMonthFilter('');
                     setStartDate(event.target.value);
-                  }} />
+                  }}
+                />
               </Field>
               <Field label="End date" htmlFor="report_end" className="sm:w-40">
                 <Input
@@ -285,111 +420,118 @@ export function Reports() {
                   onChange={(event) => {
                     setMonthFilter('');
                     setEndDate(event.target.value);
-                  }} />
+                  }}
+                />
               </Field>
-              {definition.supportsCategoryFilter &&
-            <Field label="Bill category" htmlFor="report_bill_category" className="sm:w-44">
+              {definition.supportsCategoryFilter && (
+                <Field label="Bill category" htmlFor="report_bill_category" className="sm:w-44">
                   <Select id="report_bill_category" value={billCategory} onChange={(event) => setBillCategory(event.target.value)}>
                     <option value="">All categories</option>
-                    <option value="utility">Utility</option>
+                    <option value="electricity">Electricity</option>
+                    <option value="water">Water</option>
                     <option value="room_fee">Room fee</option>
                   </Select>
                 </Field>
-            }
-              {definition.needsCustomer &&
-            <Field label="Customer" htmlFor="report_customer" className="sm:w-56" required>
+              )}
+              {definition.needsCustomer && (
+                <Field label="Customer" htmlFor="report_customer" className="sm:w-56" required>
                   <Select id="report_customer" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
                     <option value="">Select customer…</option>
-                    {customers.map((customer) =>
-                <option key={customer.id} value={customer.id}>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
                         {customerName(customer)}
                       </option>
-                )}
+                    ))}
                   </Select>
                 </Field>
-            }
+              )}
             </div>
-          } />
-        
+          }
+        />
 
-        {!path ?
-        <EmptyState
-          icon={FileTextIcon}
-          title="Select a customer"
-          description="This report needs a customer before it can be generated." /> :
-
-        error ?
-        <ApiErrorState error={error} onRetry={reload} /> :
-
-        <>
-            {(period || totals.length > 0 || meta) && !loading &&
-          <div className="flex flex-col gap-4 border-b border-line px-4 py-4 sm:flex-row sm:flex-wrap sm:items-end sm:px-5">
-                {period &&
-            <div>
+        {!path ? (
+          <EmptyState
+            icon={FileTextIcon}
+            title="Select a customer"
+            description="This report needs a customer before it can be generated."
+          />
+        ) : error ? (
+          <ApiErrorState error={error} onRetry={reload} />
+        ) : (
+          <>
+            {(period || totals.length > 0 || meta) && !loading && (
+              <div className="flex flex-col gap-4 border-b border-line px-4 py-4 sm:flex-row sm:flex-wrap sm:items-end sm:px-5">
+                {period && (
+                  <div>
                     <p className="text-[11px] uppercase tracking-wide text-ink-soft">Period</p>
                     <p className="mt-0.5 text-sm text-ink">
                       {formatDate(period.start)} → {formatDate(period.end)}
                     </p>
                   </div>
-            }
-                {meta?.recipient &&
-            <div>
-                    <p className="text-[11px] uppercase tracking-wide text-ink-soft">Recipient</p>
-                    <p className="mt-1">
-                      <Badge tone={meta.recipient === 'property_owner' ? 'brand' : 'neutral'}>
-                        {meta.recipient === 'property_owner' ? 'Property owner' : 'Utility supplier'}
-                      </Badge>
-                    </p>
-                  </div>
-            }
-                {meta?.count !== null && meta?.count !== undefined &&
-            <div>
+                )}
+                {meta?.recipient && (() => {
+                  const badge = recipientBadge(meta.recipient);
+                  return (
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-ink-soft">Recipient</p>
+                      <p className="mt-1">
+                        <Badge tone={badge.tone}>{badge.label}</Badge>
+                      </p>
+                    </div>
+                  );
+                })()}
+                {meta?.count !== null && meta?.count !== undefined && (
+                  <div>
                     <p className="text-[11px] uppercase tracking-wide text-ink-soft">Records</p>
                     <p className="mt-0.5 text-sm font-medium text-ink">{meta.count}</p>
                   </div>
-            }
-                {totals.map((total, index) =>
-            <div key={total.key} className={index === 0 ? 'sm:ml-auto' : undefined}>
+                )}
+                {totals.map((total, index) => (
+                  <div key={total.key} className={index === 0 ? 'sm:ml-auto' : undefined}>
                     <p className="text-[11px] uppercase tracking-wide text-ink-soft">{titleCase(total.key)}</p>
                     <p
-                className={`mt-0.5 font-semibold tracking-[-0.02em] ${
-                index === 0 ? 'text-[26px] leading-tight text-ink' : 'text-lg text-ink'} ${
-                total.value < 0 ? 'text-danger-600' : ''}`}>
-                
+                      className={`mt-0.5 font-semibold tracking-[-0.02em] ${
+                        index === 0 ? 'text-[26px] leading-tight text-ink' : 'text-lg text-ink'
+                      } ${total.value < 0 ? 'text-danger-600' : ''}`}
+                    >
                       {formatCurrency(total.value)}
                     </p>
                   </div>
-            )}
+                ))}
               </div>
-          }
+            )}
 
-            {note && !loading &&
-          <p className="border-b border-line bg-subtle px-4 py-2.5 text-[13px] text-ink-muted sm:px-5">{note}</p>
-          }
+            {note && !loading && (
+              <p className="border-b border-line bg-subtle px-4 py-2.5 text-[13px] text-ink-muted sm:px-5">{note}</p>
+            )}
 
             {breakdown && !loading && <ProfitChart data={breakdown.data} label={breakdown.label} />}
 
             <ReportTable
-            rows={rows}
-            loading={loading}
-            emptyTitle="No rows for this period"
-            emptyDescription="Try widening the date range, or check that data exists for these dates." />
-          
+              rows={rows}
+              loading={loading}
+              emptyTitle="No rows for this period"
+              emptyDescription="Try widening the date range, or check that data exists for these dates."
+            />
 
-            {active === 'utility-payments' && !loading && unpaidUtilities.length > 0 &&
-          <div className="border-t border-line">
+            {unpaidSection.label && !loading && unpaidSection.rows.length > 0 && (
+              <div className="border-t border-line">
                 <div className="px-4 pb-1 pt-4 sm:px-5">
-                  <h3 className="text-[14px] font-semibold text-ink">Unpaid room utility bills</h3>
+                  <h3 className="text-[14px] font-semibold text-ink">
+                    Unpaid room {unpaidSection.label} bills
+                  </h3>
                   <p className="mt-0.5 text-[13px] text-ink-muted">
-                    {unpaidUtilities.length} room bill{unpaidUtilities.length === 1 ? '' : 's'} not yet settled with the supplier.
+                    {unpaidSection.rows.length} room {unpaidSection.label} bill
+                    {unpaidSection.rows.length === 1 ? '' : 's'} not yet settled with the {unpaidSection.label}{' '}
+                    supplier.
                   </p>
                 </div>
-                <ReportTable rows={unpaidUtilities} />
+                <ReportTable rows={unpaidSection.rows} />
               </div>
-          }
+            )}
           </>
-        }
+        )}
       </Card>
-    </div>);
-
+    </div>
+  );
 }

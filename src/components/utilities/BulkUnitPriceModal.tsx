@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import type { BuildingUtilityBill, MonthlyUtilityRow } from '../../types';
+import { useEffect, useState } from 'react';
+import type { NormalizedBuildingServiceBill, NormalizedServiceRow, ServiceKind } from '../../types';
 import type { ApiError } from '../../utils/api';
 import { formatCurrency, formatMonth, toNumber } from '../../utils/format';
-import { Input } from '../ui/Field';
+import { SERVICE_CONFIG } from '../../utils/serviceRecords';
+import { Field, Input } from '../ui/Field';
 import { FormModal } from '../ui/FormModal';
 
 interface BulkUnitPriceModalProps {
+  kind: ServiceKind;
   open: boolean;
   month: string;
-  rows: MonthlyUtilityRow[];
-  buildingBill: BuildingUtilityBill | null;
+  rows: NormalizedServiceRow[];
+  buildingBill: NormalizedBuildingServiceBill | null;
   pending: boolean;
   error: ApiError | null;
   onClose: () => void;
@@ -19,11 +21,11 @@ interface BulkUnitPriceModalProps {
 interface RateDraft {
   selected: boolean;
   useDefault: boolean;
-  electricityRate: string;
-  waterRate: string;
+  rate: string;
 }
 
 export function BulkUnitPriceModal({
+  kind,
   open,
   month,
   rows,
@@ -33,33 +35,34 @@ export function BulkUnitPriceModal({
   onClose,
   onSubmit
 }: BulkUnitPriceModalProps) {
+  const config = SERVICE_CONFIG[kind];
   const [drafts, setDrafts] = useState<Record<string, RateDraft>>({});
+  const [reason, setReason] = useState('');
   const [touched, setTouched] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setTouched(false);
+    setReason('');
     const next: Record<string, RateDraft> = {};
     for (const row of rows) {
-      const hasCustom =
-      buildingBill &&
-      (toNumber(row.electricity_unit_price) !== toNumber(buildingBill.electricity_unit_price) ||
-      toNumber(row.water_unit_price) !== toNumber(buildingBill.water_unit_price));
+      const hasCustom = Boolean(
+        buildingBill && row.unit_price !== null && toNumber(row.unit_price) !== toNumber(buildingBill.unit_price)
+      );
       next[String(row.room_id)] = {
-        selected: Boolean(hasCustom),
+        selected: hasCustom,
         useDefault: false,
-        electricityRate: String(toNumber(row.electricity_unit_price)),
-        waterRate: String(toNumber(row.water_unit_price))
+        rate: String(toNumber(row.unit_price))
       };
     }
     setDrafts(next);
   }, [open, rows, buildingBill]);
 
   const update = (roomId: number, patch: Partial<RateDraft>) =>
-  setDrafts((prev) => ({
-    ...prev,
-    [String(roomId)]: { ...prev[String(roomId)], ...patch }
-  }));
+    setDrafts((prev) => ({
+      ...prev,
+      [String(roomId)]: { ...prev[String(roomId)], ...patch }
+    }));
 
   const selectedRows = rows.filter((row) => drafts[String(row.room_id)]?.selected);
 
@@ -73,13 +76,13 @@ export function BulkUnitPriceModal({
       }
       return {
         room_number: row.room_number,
-        ...(draft.electricityRate !== '' ? { electricity_unit_price: toNumber(draft.electricityRate).toFixed(2) } : {}),
-        ...(draft.waterRate !== '' ? { water_unit_price: toNumber(draft.waterRate).toFixed(2) } : {})
+        ...(draft.rate !== '' ? { [config.unitPriceKey]: toNumber(draft.rate).toFixed(2) } : {})
       };
     });
 
     onSubmit({
       billing_month: month,
+      ...(reason.trim() ? { reason: reason.trim() } : {}),
       custom_rates: customRates
     });
   };
@@ -89,33 +92,29 @@ export function BulkUnitPriceModal({
       open={open}
       onClose={onClose}
       onSubmit={handleSubmit}
-      title={`Custom rates · ${formatMonth(month)}`}
+      title={`Custom ${config.lowerLabel} rates · ${formatMonth(month)}`}
       submitLabel="Apply rates"
       pending={pending}
       error={error}
-      size="lg">
-      
-      {buildingBill &&
-      <div className="flex flex-wrap gap-4 rounded-lg border border-line bg-subtle px-3.5 py-2.5 text-[12px] text-ink-muted">
+      size="lg"
+    >
+      {buildingBill && (
+        <div className="flex flex-wrap gap-4 rounded-lg border border-line bg-subtle px-3.5 py-2.5 text-[12px] text-ink-muted">
           <span>
-            Default electricity:{' '}
-            <strong className="text-ink">{formatCurrency(buildingBill.electricity_unit_price)} / unit</strong>
-          </span>
-          <span>
-            Default water:{' '}
-            <strong className="text-ink">{formatCurrency(buildingBill.water_unit_price)} / unit</strong>
+            Default {config.lowerLabel}:{' '}
+            <strong className="text-ink">{formatCurrency(buildingBill.unit_price)} / unit</strong>
           </span>
         </div>
-      }
+      )}
 
-      {touched && selectedRows.length === 0 &&
-      <p role="alert" className="text-[12px] text-danger-600">
+      {touched && selectedRows.length === 0 && (
+        <p role="alert" className="text-[12px] text-danger-600">
           Select at least one room.
         </p>
-      }
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-line">
-        <table className="w-full min-w-[540px] text-[13px]">
+        <table className="w-full min-w-[460px] text-[13px]">
           <thead className="bg-subtle text-left text-[12px] text-ink-muted">
             <tr>
               <th scope="col" className="px-3 py-2 font-medium">
@@ -125,10 +124,7 @@ export function BulkUnitPriceModal({
                 Room
               </th>
               <th scope="col" className="px-3 py-2 font-medium">
-                Electricity / unit
-              </th>
-              <th scope="col" className="px-3 py-2 font-medium">
-                Water / unit
+                {config.label} / unit
               </th>
               <th scope="col" className="px-3 py-2 font-medium">
                 Mode
@@ -140,8 +136,7 @@ export function BulkUnitPriceModal({
               const draft = drafts[String(row.room_id)] ?? {
                 selected: false,
                 useDefault: false,
-                electricityRate: String(toNumber(row.electricity_unit_price)),
-                waterRate: String(toNumber(row.water_unit_price))
+                rate: String(toNumber(row.unit_price))
               };
               return (
                 <tr key={row.room_id}>
@@ -151,7 +146,8 @@ export function BulkUnitPriceModal({
                       aria-label={`Select Room ${row.room_number}`}
                       className="h-4 w-4 accent-brand-600"
                       checked={draft.selected}
-                      onChange={(event) => update(row.room_id, { selected: event.target.checked })} />
+                      onChange={(event) => update(row.room_id, { selected: event.target.checked })}
+                    />
                   </td>
                   <td className="px-3 py-2.5">
                     <p className="font-medium text-ink">Room {row.room_number}</p>
@@ -159,25 +155,15 @@ export function BulkUnitPriceModal({
                   </td>
                   <td className="px-3 py-2.5">
                     <Input
-                      aria-label={`Room ${row.room_number} electricity rate`}
+                      aria-label={`Room ${roomLabel(row)} ${config.lowerLabel} rate`}
                       type="number"
                       min="0"
                       step="0.01"
                       disabled={!draft.selected || draft.useDefault}
-                      value={draft.electricityRate}
-                      onChange={(event) => update(row.room_id, { electricityRate: event.target.value })}
-                      className="w-28" />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <Input
-                      aria-label={`Room ${row.room_number} water rate`}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      disabled={!draft.selected || draft.useDefault}
-                      value={draft.waterRate}
-                      onChange={(event) => update(row.room_id, { waterRate: event.target.value })}
-                      className="w-28" />
+                      value={draft.rate}
+                      onChange={(event) => update(row.room_id, { rate: event.target.value })}
+                      className="w-32"
+                    />
                   </td>
                   <td className="px-3 py-2.5">
                     <label className="inline-flex cursor-pointer items-center gap-1.5 text-[12px] text-ink-muted">
@@ -186,15 +172,30 @@ export function BulkUnitPriceModal({
                         className="h-3.5 w-3.5 accent-brand-600"
                         disabled={!draft.selected}
                         checked={draft.useDefault}
-                        onChange={(event) => update(row.room_id, { useDefault: event.target.checked })} />
+                        onChange={(event) => update(row.room_id, { useDefault: event.target.checked })}
+                      />
                       <span>Use default</span>
                     </label>
                   </td>
-                </tr>);
+                </tr>
+              );
             })}
           </tbody>
         </table>
       </div>
-    </FormModal>);
 
+      <Field label="Reason (optional)" htmlFor="bulk_rate_reason">
+        <Input
+          id="bulk_rate_reason"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          placeholder="Optional audit log note"
+        />
+      </Field>
+    </FormModal>
+  );
+}
+
+function roomLabel(row: NormalizedServiceRow): string {
+  return row.room_number;
 }

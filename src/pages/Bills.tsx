@@ -1,8 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { BanknoteIcon, ClipboardListIcon, DownloadIcon, EyeIcon, ReceiptTextIcon, SparklesIcon, Trash2Icon } from 'lucide-react';
+import {
+  BanknoteIcon,
+  ClipboardListIcon,
+  DownloadIcon,
+  EyeIcon,
+  ReceiptTextIcon,
+  SparklesIcon,
+  Trash2Icon
+} from 'lucide-react';
 import { toast } from 'sonner';
-import type { Bill, UtilityRecord } from '../types';
+import type { Bill, ElectricityRecord, WaterRecord } from '../types';
 import { useBillingData } from '../hooks/useBillingData';
 import { useCollection } from '../hooks/useResource';
 import { useCrud } from '../hooks/useCrud';
@@ -21,14 +29,21 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { SearchInput } from '../components/ui/SearchInput';
 import { type BillPdfSources, buildBillBundle, downloadBillPdf } from '../utils/billPdf';
 import { formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from '../utils/format';
-import { billOutstanding, billRentDue, billStatus, billUtilities } from '../utils/lookup';
+import {
+  billElectricityRemaining,
+  billOutstanding,
+  billRentDue,
+  billStatus,
+  billWaterRemaining
+} from '../utils/lookup';
 
 const statusTone: Record<string, BadgeTone> = { paid: 'success', partial: 'warn', unpaid: 'danger' };
 
 export function Bills() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { bills, leases, rooms, leaseMap, customerMap, roomMap, loading, error, reloadAll } = useBillingData();
-  const { data: utilities } = useCollection<UtilityRecord>('/api/utilities/');
+  const { data: electricityRecords } = useCollection<ElectricityRecord>('/api/electricity/');
+  const { data: waterRecords } = useCollection<WaterRecord>('/api/water/');
   const [generateOpen, setGenerateOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [detail, setDetail] = useState<Bill | null>(null);
@@ -61,7 +76,7 @@ export function Bills() {
       const matchesMonth = !month || monthInputValue(bill.billing_month) === month;
       const matchesStatus = status === 'all' || billStatus(bill) === status;
       const matchesQuery =
-      !needle || `${bill.customer_name ?? ''} ${bill.room_number ?? ''} ${bill.id}`.toLowerCase().includes(needle);
+        !needle || `${bill.customer_name ?? ''} ${bill.room_number ?? ''} ${bill.id}`.toLowerCase().includes(needle);
       return matchesMonth && matchesStatus && matchesQuery;
     });
   }, [bills, month, status, query]);
@@ -76,8 +91,8 @@ export function Bills() {
   );
 
   const pdfSources: BillPdfSources = useMemo(
-    () => ({ leaseMap, customerMap, roomMap, utilities }),
-    [leaseMap, customerMap, roomMap, utilities]
+    () => ({ leaseMap, customerMap, roomMap, electricityRecords, waterRecords }),
+    [leaseMap, customerMap, roomMap, electricityRecords, waterRecords]
   );
 
   const downloadOne = (bill: Bill) => {
@@ -85,97 +100,146 @@ export function Bills() {
     toast.success(`Bill #${bill.id} downloaded`);
   };
 
-  const missingUtilityRooms = (billingMonth: string) => {
+  const missingServiceRooms = (billingMonth: string) => {
     const monthKey = monthInputValue(billingMonth);
-    const covered = new Set(
-      utilities.filter((record) => monthInputValue(record.billing_month) === monthKey).map((record) => record.room)
+    const elecCovered = new Set(
+      electricityRecords.filter((record) => monthInputValue(record.billing_month) === monthKey).map((record) => record.room)
     );
-    return leases.
-    filter((lease) => lease.is_active && !covered.has(lease.room)).
-    map((lease) => lease.room_number ?? roomMap.get(lease.room)?.room_number ?? `#${lease.room}`);
+    const waterCovered = new Set(
+      waterRecords.filter((record) => monthInputValue(record.billing_month) === monthKey).map((record) => record.room)
+    );
+    const activeLeases = leases.filter((lease) => lease.is_active);
+    const roomLabel = (lease: (typeof activeLeases)[number]) =>
+      lease.room_number ?? roomMap.get(lease.room)?.room_number ?? `#${lease.room}`;
+    return {
+      electricity: activeLeases.filter((lease) => !elecCovered.has(lease.room)).map(roomLabel),
+      water: activeLeases.filter((lease) => !waterCovered.has(lease.room)).map(roomLabel)
+    };
   };
 
   const columns: Column<Bill>[] = [
-  {
-    key: 'bill',
-    header: 'Bill',
-    primary: true,
-    render: (bill) =>
-    <div>
+    {
+      key: 'bill',
+      header: 'Bill',
+      primary: true,
+      render: (bill) => (
+        <div>
           <span className="font-medium text-ink">{bill.customer_name ?? `Lease #${bill.lease}`}</span>
           <span className="ml-2 text-[12px] text-ink-soft">#{bill.id}</span>
         </div>
-
-  },
-  { key: 'room', header: 'Room', render: (bill) => <span className="text-ink">{bill.room_number ?? '—'}</span> },
-  { key: 'month', header: 'Month', render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatMonth(bill.billing_month)}</span> },
-  { key: 'due', header: 'Due date', render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatDate(bill.due_date)}</span> },
-  {
-    key: 'total',
-    header: 'Rent due',
-    align: 'right',
-    render: (bill) =>
-    <span className="whitespace-nowrap">
+      )
+    },
+    { key: 'room', header: 'Room', render: (bill) => <span className="text-ink">{bill.room_number ?? '—'}</span> },
+    {
+      key: 'month',
+      header: 'Month',
+      render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatMonth(bill.billing_month)}</span>
+    },
+    {
+      key: 'due',
+      header: 'Due date',
+      render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatDate(bill.due_date)}</span>
+    },
+    {
+      key: 'total',
+      header: 'Rent due',
+      align: 'right',
+      render: (bill) => (
+        <span className="whitespace-nowrap">
           <span className="block font-semibold text-ink">{formatCurrency(billRentDue(bill))}</span>
-          {toNumber(bill.deposit_deduction) > 0 &&
-      <span className="block text-[12px] text-ink-soft">
+          {toNumber(bill.deposit_deduction) > 0 && (
+            <span className="block text-[12px] text-ink-soft">
               {formatCurrency(bill.rent)} − {formatCurrency(bill.deposit_deduction)} deposit
             </span>
+          )}
+        </span>
+      )
+    },
+    {
+      key: 'electricity',
+      header: 'Electricity',
+      align: 'right',
+      render: (bill) => {
+        const billed = toNumber(bill.electricity);
+        const rem = billElectricityRemaining(bill);
+        const paid = toNumber(bill.electricity_paid);
+        return (
+          <span className="whitespace-nowrap">
+            <span className="block text-ink-muted">{formatCurrency(billed)}</span>
+            <span className="block text-[12px] text-ink-soft">
+              {billed > 0 && rem <= 0
+                ? 'Paid to CEB'
+                : paid > 0 && rem > 0
+                  ? `${formatCurrency(rem)} left · CEB`
+                  : 'to CEB'}
+            </span>
+          </span>
+        );
       }
-        </span>
-
-  },
-  {
-    key: 'utilities',
-    header: 'Utilities',
-    align: 'right',
-    render: (bill) =>
-    <span className="whitespace-nowrap">
-          <span className="block text-ink-muted">{formatCurrency(billUtilities(bill))}</span>
-          <span className="block text-[12px] text-ink-soft">paid to supplier</span>
-        </span>
-
-  },
-  {
-    key: 'outstanding',
-    header: 'Rent outstanding',
-    align: 'right',
-    render: (bill) => {
-      const value = billOutstanding(bill);
-      return <span className={value > 0 ? 'font-medium text-danger-600' : 'text-success-600'}>{formatCurrency(value)}</span>;
+    },
+    {
+      key: 'water',
+      header: 'Water',
+      align: 'right',
+      render: (bill) => {
+        const billed = toNumber(bill.water);
+        const rem = billWaterRemaining(bill);
+        const paid = toNumber(bill.water_paid);
+        return (
+          <span className="whitespace-nowrap">
+            <span className="block text-ink-muted">{formatCurrency(billed)}</span>
+            <span className="block text-[12px] text-ink-soft">
+              {billed > 0 && rem <= 0
+                ? 'Paid to NWSDB'
+                : paid > 0 && rem > 0
+                  ? `${formatCurrency(rem)} left · NWSDB`
+                  : 'to NWSDB'}
+            </span>
+          </span>
+        );
+      }
+    },
+    {
+      key: 'outstanding',
+      header: 'Rent outstanding',
+      align: 'right',
+      render: (bill) => {
+        const value = billOutstanding(bill);
+        return <span className={value > 0 ? 'font-medium text-danger-600' : 'text-success-600'}>{formatCurrency(value)}</span>;
+      }
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (bill) => {
+        const value = billStatus(bill);
+        return <Badge tone={statusTone[value] ?? 'neutral'}>{titleCase(value)}</Badge>;
+      }
     }
-  },
-  {
-    key: 'status',
-    header: 'Status',
-    render: (bill) => {
-      const value = billStatus(bill);
-      return <Badge tone={statusTone[value] ?? 'neutral'}>{titleCase(value)}</Badge>;
-    }
-  }];
-
+  ];
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Bills"
-        description="One bill per lease each month. Tenants pay rent less the deposit deduction here; electricity and water are shown for reference and paid directly to the supplier."
+        description="One bill per lease each month. Tenants pay rent less the deposit deduction here; electricity (CEB) and water (NWSDB) are paid separately to each supplier."
         actions={
-        <>
+          <>
             <Link
               to="/reports?type=recorrection-logs"
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:bg-canvas">
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors duration-150 ease-out hover:bg-canvas"
+            >
               <ClipboardListIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
               Audit log
             </Link>
             <Button
-            variant="secondary"
-            icon={BanknoteIcon}
-            onClick={() => {
-              setPayingBill(null);
-              setPaymentOpen(true);
-            }}>
-            
+              variant="secondary"
+              icon={BanknoteIcon}
+              onClick={() => {
+                setPayingBill(null);
+                setPaymentOpen(true);
+              }}
+            >
               Record rent payment
             </Button>
             <Button variant="secondary" icon={DownloadIcon} onClick={() => setDownloadOpen(true)} disabled={!bills.length}>
@@ -185,8 +249,8 @@ export function Bills() {
               Generate monthly bills
             </Button>
           </>
-        } />
-      
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-line bg-surface p-4 shadow-card">
@@ -212,7 +276,7 @@ export function Bills() {
           title={`${filtered.length} ${filtered.length === 1 ? 'bill' : 'bills'}`}
           description={`${rooms.length} rooms · ${leases.filter((lease) => lease.is_active).length} active leases`}
           actions={
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
               <SearchInput value={query} onChange={setQuery} placeholder="Search tenant or room" />
               <Field label="Month" htmlFor="bills_month" className="sm:w-40">
                 <Input id="bills_month" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
@@ -226,81 +290,82 @@ export function Bills() {
                 </Select>
               </Field>
             </div>
-          } />
-        
-        {error ?
-        <ApiErrorState error={error} onRetry={reloadAll} /> :
-
-        <DataTable
-          columns={columns}
-          rows={filtered}
-          keyOf={(bill) => bill.id}
-          loading={loading}
-          onRowClick={setDetail}
-          emptyTitle={bills.length ? 'No bills match these filters' : 'No bills yet'}
-          emptyDescription={
-          bills.length ?
-          'Clear the month or status filter to see more.' :
-          'Enter utilities for the month, then generate bills for all active leases.'
           }
-          emptyAction={
-          bills.length ? undefined :
-          <Button icon={ReceiptTextIcon} onClick={() => setGenerateOpen(true)}>
+        />
+
+        {error ? (
+          <ApiErrorState error={error} onRetry={reloadAll} />
+        ) : (
+          <DataTable
+            columns={columns}
+            rows={filtered}
+            keyOf={(bill) => bill.id}
+            loading={loading}
+            onRowClick={setDetail}
+            emptyTitle={bills.length ? 'No bills match these filters' : 'No bills yet'}
+            emptyDescription={
+              bills.length
+                ? 'Clear the month or status filter to see more.'
+                : 'Enter electricity and water bills for the month, then generate bills for all active leases.'
+            }
+            emptyAction={
+              bills.length ? undefined : (
+                <Button icon={ReceiptTextIcon} onClick={() => setGenerateOpen(true)}>
                   Generate monthly bills
                 </Button>
-
-          }
-          rowActions={(bill) =>
-          <>
+              )
+            }
+            rowActions={(bill) => (
+              <>
                 <Button variant="secondary" size="sm" icon={EyeIcon} onClick={() => setDetail(bill)}>
                   View
                 </Button>
                 <Button variant="ghost" size="sm" icon={DownloadIcon} onClick={() => downloadOne(bill)}>
                   PDF
                 </Button>
-                {billOutstanding(bill) > 0 &&
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={BanknoteIcon}
-              className="text-brand-700 hover:bg-brand-50"
-              onClick={() => {
-                setPayingBill(bill);
-                setPaymentOpen(true);
-              }}>
-              
+                {billOutstanding(bill) > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={BanknoteIcon}
+                    className="text-brand-700 hover:bg-brand-50"
+                    onClick={() => {
+                      setPayingBill(bill);
+                      setPaymentOpen(true);
+                    }}
+                  >
                     Pay
                   </Button>
-            }
+                )}
                 <Button
-              variant="ghost"
-              size="sm"
-              icon={Trash2Icon}
-              className="text-danger-600 hover:bg-danger-50 hover:text-danger-700"
-              onClick={() => setDeleting(bill)}>
-              
+                  variant="ghost"
+                  size="sm"
+                  icon={Trash2Icon}
+                  className="text-danger-600 hover:bg-danger-50 hover:text-danger-700"
+                  onClick={() => setDeleting(bill)}
+                >
                   Delete
                 </Button>
               </>
-          } />
-
-        }
+            )}
+          />
+        )}
       </Card>
 
       <GenerateBillsModal
         open={generateOpen}
         onClose={() => setGenerateOpen(false)}
         onDone={reloadAll}
-        missingUtilityRooms={missingUtilityRooms} />
-      
+        missingServiceRooms={missingServiceRooms}
+      />
 
       <DownloadBillsModal
         open={downloadOpen}
         onClose={() => setDownloadOpen(false)}
         bills={bills}
         sources={pdfSources}
-        defaultMonth={month || undefined} />
-      
+        defaultMonth={month || undefined}
+      />
 
       <BillDetailModal
         bill={detail}
@@ -310,8 +375,8 @@ export function Bills() {
           setDetail(null);
           setPayingBill(bill);
           setPaymentOpen(true);
-        }} />
-      
+        }}
+      />
 
       <RecordPaymentModal
         open={paymentOpen}
@@ -321,8 +386,8 @@ export function Bills() {
           setPaymentOpen(false);
           setPayingBill(null);
         }}
-        onSaved={reloadAll} />
-      
+        onSaved={reloadAll}
+      />
 
       <ConfirmDialog
         open={Boolean(deleting)}
@@ -332,8 +397,8 @@ export function Bills() {
         danger
         pending={crud.pending}
         onConfirm={() => deleting && crud.remove(deleting.id)}
-        onClose={() => setDeleting(null)} />
-      
-    </div>);
-
+        onClose={() => setDeleting(null)}
+      />
+    </div>
+  );
 }

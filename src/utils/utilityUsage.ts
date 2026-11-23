@@ -32,9 +32,9 @@ export function formatPerDay(units: number | string | null | undefined, month: s
  * billed more units than the rooms recorded (common-area use, losses, meter drift).
  */
 export function usageDifference(
-supplierUnits: number | string | null | undefined,
-meterUnits: number | string | null | undefined)
-: number | null {
+  supplierUnits: number | string | null | undefined,
+  meterUnits: number | string | null | undefined
+): number | null {
   if (supplierUnits === null || supplierUnits === undefined || supplierUnits === '') return null;
   return toNumber(supplierUnits) - toNumber(meterUnits);
 }
@@ -49,28 +49,13 @@ export function formatDifference(difference: number | null, supplierUnits?: numb
   return `${sign}${formatUnits(Math.abs(difference))} units${pct}`;
 }
 
-/** What is still owed to the supplier for a room's utility bill. */
-export function utilityRemaining(record: {
-  remaining_balance?: number | string;
-  total_cost?: number | string;
-  total_bill?: number | string;
-  total_utility_paid?: number | string;
-  is_paid?: boolean;
-}): number {
-  if (record.is_paid) return 0;
-  if (record.remaining_balance !== undefined && record.remaining_balance !== null && record.remaining_balance !== '') {
-    return Math.max(0, toNumber(record.remaining_balance));
-  }
-  return Math.max(0, toNumber(record.total_cost ?? record.total_bill) - toNumber(record.total_utility_paid));
-}
-
 type Row = Record<string, unknown>;
 
 const usageKeys = ['electricity_units', 'water_units'];
 
 /**
  * For report rows that carry usage and a billing month, inserts
- * `<utility>_avg_per_day` immediately after each usage column.
+ * `<service>_avg_units_per_day` immediately after each usage column.
  */
 export function withDailyAverages(rows: Row[]): Row[] {
   return rows.map((row) => {

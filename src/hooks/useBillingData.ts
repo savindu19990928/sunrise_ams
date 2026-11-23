@@ -6,7 +6,7 @@ import { useCollection } from './useResource';
 
 /**
  * Bills joined with lease / customer / room context. Rent collected is summed
- * from lease payments only — utility supplier payments live in a separate ledger.
+ * from lease payments only — electricity and water supplier payments live in separate ledgers.
  */
 export function useBillingData() {
   const bills = useCollection<Bill>('/api/bills/');
@@ -29,17 +29,20 @@ export function useBillingData() {
 
   const decoratedBills = useMemo(
     () =>
-    bills.data.map((bill) => {
-      const lease = leaseMap.get(bill.lease);
-      const rentPaid = paidByBill.get(bill.id) ?? (bill.is_paid ? billRentDue(bill) : 0);
-      const withPaid: Bill = { ...bill, amount_paid: rentPaid, status: undefined };
-      return {
-        ...withPaid,
-        status: billStatus(withPaid),
-        customer_name: bill.customer_name ?? (lease ? leaseCustomerName(lease, customerMap) : undefined),
-        room_number: bill.room_number ?? (lease ? leaseRoomNumber(lease, roomMap) : undefined)
-      };
-    }),
+      bills.data.map((bill) => {
+        const lease = leaseMap.get(bill.lease);
+        const hasNetPaid = bill.net_paid !== undefined && bill.net_paid !== null && bill.net_paid !== '';
+        const rentPaid = hasNetPaid
+          ? toNumber(bill.net_paid)
+          : paidByBill.get(bill.id) ?? (bill.is_paid ? billRentDue(bill) : 0);
+        const withPaid: Bill = { ...bill, amount_paid: rentPaid, status: undefined };
+        return {
+          ...withPaid,
+          status: billStatus(withPaid),
+          customer_name: bill.customer_name ?? (lease ? leaseCustomerName(lease, customerMap) : undefined),
+          room_number: bill.room_number ?? (lease ? leaseRoomNumber(lease, roomMap) : undefined)
+        };
+      }),
     [bills.data, leaseMap, customerMap, roomMap, paidByBill]
   );
 

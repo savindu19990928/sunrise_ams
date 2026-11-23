@@ -8,6 +8,8 @@ import { UpdateProvider } from './contexts/UpdateContext';
 import { Bills } from './pages/Bills';
 import { Customers } from './pages/Customers';
 import { Dashboard } from './pages/Dashboard';
+import { Electricity } from './pages/Electricity';
+import { ElectricityPayments } from './pages/ElectricityPayments';
 import { Leases } from './pages/Leases';
 import { Login } from './pages/Login';
 import { Overdue } from './pages/Overdue';
@@ -18,23 +20,23 @@ import { Reports } from './pages/Reports';
 import { Rooms } from './pages/Rooms';
 import { Settings } from './pages/Settings';
 import { Staff } from './pages/Staff';
-import { Utilities } from './pages/Utilities';
-import { UtilityPayments } from './pages/UtilityPayments';
+import { Water } from './pages/Water';
+import { WaterPayments } from './pages/WaterPayments';
 
-function RequireAuth({ children }: {children: React.ReactNode;}) {
+function RequireAuth({ children }: { children: React.ReactNode; }) {
   const { user, ready } = useAuth();
   if (!ready) {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-canvas text-sm text-ink-muted">
         Loading portal…
-      </div>);
-
+      </div>
+    );
   }
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
-function RequireSuperuser({ children }: {children: React.ReactNode;}) {
+function RequireSuperuser({ children }: { children: React.ReactNode; }) {
   const { user } = useAuth();
   if (!user?.is_superuser) return <Navigate to="/" replace />;
   return <>{children}</>;
@@ -59,14 +61,19 @@ export function App() {
                   <RequireAuth>
                     <AppShell />
                   </RequireAuth>
-                }>
+                }
+              >
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/reminders" element={<Reminders />} />
                 <Route path="/rooms" element={<Rooms />} />
                 <Route path="/customers" element={<Customers />} />
                 <Route path="/leases" element={<Leases />} />
-                <Route path="/utilities" element={<Utilities />} />
-                <Route path="/utility-payments" element={<UtilityPayments />} />
+                <Route path="/electricity" element={<Electricity />} />
+                <Route path="/electricity-payments" element={<ElectricityPayments />} />
+                <Route path="/water" element={<Water />} />
+                <Route path="/water-payments" element={<WaterPayments />} />
+                <Route path="/utilities" element={<Navigate to="/electricity" replace />} />
+                <Route path="/utility-payments" element={<Navigate to="/electricity-payments" replace />} />
                 <Route path="/bills" element={<Bills />} />
                 <Route path="/payments" element={<Payments />} />
                 <Route path="/overdue" element={<Overdue />} />

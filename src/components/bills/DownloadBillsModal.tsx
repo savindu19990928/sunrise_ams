@@ -73,7 +73,7 @@ export function DownloadBillsModal({ open, onClose, bills, sources, defaultMonth
       open={open}
       onClose={onClose}
       title="Download bills"
-      description="One PDF per tenant with rent, their own electricity and water, the deposit position and the last three months of utilities."
+      description="One PDF per tenant with rent, separate electricity (CEB) and water (NWSDB) charges, deposit position, and 3-month meter history."
       size="md"
       footer={
       <>

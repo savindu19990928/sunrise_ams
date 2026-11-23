@@ -4,8 +4,9 @@ import {
   BedDoubleIcon,
   BellIcon,
   ClipboardListIcon,
+  DropletIcon,
+  DropletsIcon,
   FileTextIcon,
-  GaugeIcon,
   LayoutDashboardIcon,
   PlugZapIcon,
   ReceiptTextIcon,
@@ -13,13 +14,14 @@ import {
   ShieldCheckIcon,
   TimerOffIcon,
   UsersIcon,
-  WrenchIcon } from
-'lucide-react';
+  WrenchIcon,
+  ZapIcon
+} from 'lucide-react';
 
 export interface NavItem {
   label: string;
   to: string;
-  icon: ComponentType<{className?: string;}>;
+  icon: ComponentType<{ className?: string; }>;
   superuserOnly?: boolean;
 }
 
@@ -29,43 +31,51 @@ export interface NavSection {
 }
 
 export const navSections: NavSection[] = [
-{
-  label: 'Overview',
-  items: [
-  { label: 'Dashboard', to: '/', icon: LayoutDashboardIcon },
-  { label: 'Reminders', to: '/reminders', icon: BellIcon }]
-
-},
-{
-  label: 'Property',
-  items: [
-  { label: 'Rooms', to: '/rooms', icon: BedDoubleIcon },
-  { label: 'Customers', to: '/customers', icon: UsersIcon },
-  { label: 'Leases', to: '/leases', icon: ClipboardListIcon }]
-
-},
-{
-  label: 'Billing',
-  items: [
-  { label: 'Utilities', to: '/utilities', icon: GaugeIcon },
-  { label: 'Supplier payments', to: '/utility-payments', icon: PlugZapIcon },
-  { label: 'Bills', to: '/bills', icon: ReceiptTextIcon },
-  { label: 'Rent payments', to: '/payments', icon: BanknoteIcon },
-  { label: 'Overdue', to: '/overdue', icon: TimerOffIcon }]
-
-},
-{
-  label: 'Maintenance',
-  items: [{ label: 'Room repairs', to: '/repairs', icon: WrenchIcon }]
-},
-{
-  label: 'Insights',
-  items: [{ label: 'Reports', to: '/reports', icon: FileTextIcon }]
-},
-{
-  label: 'Administration',
-  items: [
-    { label: 'Staff accounts', to: '/staff', icon: ShieldCheckIcon, superuserOnly: true },
-    { label: 'Settings & Updates', to: '/settings', icon: SettingsIcon }
-  ]
-}];
+  {
+    label: 'Overview',
+    items: [
+      { label: 'Dashboard', to: '/', icon: LayoutDashboardIcon },
+      { label: 'Reminders', to: '/reminders', icon: BellIcon }
+    ]
+  },
+  {
+    label: 'Property',
+    items: [
+      { label: 'Rooms', to: '/rooms', icon: BedDoubleIcon },
+      { label: 'Customers', to: '/customers', icon: UsersIcon },
+      { label: 'Leases', to: '/leases', icon: ClipboardListIcon }
+    ]
+  },
+  {
+    label: 'Electricity & Water',
+    items: [
+      { label: 'Electricity', to: '/electricity', icon: ZapIcon },
+      { label: 'Electricity payments', to: '/electricity-payments', icon: PlugZapIcon },
+      { label: 'Water', to: '/water', icon: DropletIcon },
+      { label: 'Water payments', to: '/water-payments', icon: DropletsIcon }
+    ]
+  },
+  {
+    label: 'Billing',
+    items: [
+      { label: 'Bills', to: '/bills', icon: ReceiptTextIcon },
+      { label: 'Rent payments', to: '/payments', icon: BanknoteIcon },
+      { label: 'Overdue', to: '/overdue', icon: TimerOffIcon }
+    ]
+  },
+  {
+    label: 'Maintenance',
+    items: [{ label: 'Room repairs', to: '/repairs', icon: WrenchIcon }]
+  },
+  {
+    label: 'Insights',
+    items: [{ label: 'Reports', to: '/reports', icon: FileTextIcon }]
+  },
+  {
+    label: 'Administration',
+    items: [
+      { label: 'Staff accounts', to: '/staff', icon: ShieldCheckIcon, superuserOnly: true },
+      { label: 'Settings & Updates', to: '/settings', icon: SettingsIcon }
+    ]
+  }
+];

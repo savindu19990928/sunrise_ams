@@ -1,4 +1,3 @@
-import React from 'react';
 import { PencilIcon, Trash2Icon } from 'lucide-react';
 import type { Room, RoomStatus } from '../../types';
 import { formatCurrency, titleCase, toNumber } from '../../utils/format';
@@ -22,7 +21,8 @@ interface RoomCardProps {
 export function RoomCard({ room, status, tenantName, onEdit, onDelete }: RoomCardProps) {
   const currentStatus: RoomStatus = status ?? room.status ?? 'vacant';
   const noteText = room.note ?? room.notes;
-  const credit = toNumber(room.utility_credit_balance);
+  const electricityCredit = toNumber(room.electricity_credit_balance);
+  const waterCredit = toNumber(room.water_credit_balance);
 
   return (
     <article className="flex flex-col rounded-xl border border-line bg-surface p-4 shadow-card transition-[border-color] duration-150 ease-out hover:border-brand-200">
@@ -38,11 +38,12 @@ export function RoomCard({ room, status, tenantName, onEdit, onDelete }: RoomCar
         <Badge tone={statusTone[currentStatus] ?? 'neutral'}>{titleCase(currentStatus)}</Badge>
       </div>
 
-      {credit > 0 &&
-      <p className="mt-3 border-t border-line pt-2.5 text-[12px] font-medium text-brand-700">
-          Utility advance credit: {formatCurrency(credit)}
-        </p>
-      }
+      {(electricityCredit > 0 || waterCredit > 0) && (
+        <div className="mt-3 space-y-1 border-t border-line pt-2.5 text-[12px] font-medium text-brand-700">
+          {electricityCredit > 0 && <p>Electricity credit: {formatCurrency(electricityCredit)}</p>}
+          {waterCredit > 0 && <p>Water credit: {formatCurrency(waterCredit)}</p>}
+        </div>
+      )}
 
       {noteText && <p className="mt-3 border-t border-line pt-2.5 text-[12px] leading-relaxed text-ink-soft">{noteText}</p>}
 
@@ -55,11 +56,11 @@ export function RoomCard({ room, status, tenantName, onEdit, onDelete }: RoomCar
           size="sm"
           icon={Trash2Icon}
           className="text-danger-600 hover:bg-danger-50 hover:text-danger-700"
-          onClick={() => onDelete(room)}>
-          
+          onClick={() => onDelete(room)}
+        >
           Delete
         </Button>
       </div>
-    </article>);
-
+    </article>
+  );
 }

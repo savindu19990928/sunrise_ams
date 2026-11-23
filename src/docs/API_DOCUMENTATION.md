@@ -1,5 +1,7 @@
 # Sunrise AMS API Documentation
 
+**Base URL:** `https://thiranda-813344430767.asia-southeast1.run.app`
+
 ---
 
 ## Architecture & Authentication Overview
@@ -21,63 +23,43 @@ Authorization: Bearer <access_token>
 
 ### Core Business Rules
 1. **Room Structure & Types:**
-   - Rooms contain only `room_number`, `room_type`, and `note` (plus system-managed `utility_credit_balance` and `created_at`). Rooms do **not** store rent fees, deposit amounts, monthly deposit deductions, or default electricity/water rates.
+   - Rooms contain only `room_number`, `room_type`, and `note` (plus system-managed `electricity_credit_balance`, `water_credit_balance`, and `created_at`). Rooms do **not** store rent fees, deposit amounts, monthly deposit deductions, or default electricity/water rates.
    - Rooms are strictly restricted to three categories: **`single`**, **`double`**, and **`annex`**.
    - Input validation enforces this on room creation and updates. Rooms can be filtered using `GET /api/rooms/?room_type=annex`.
 2. **Deposit Deduction Stop Rule & Lease Data Ownership:**
-   - Minimum deposit threshold, base rent fee, base deposit, rent fee, initial deposit, current deposit balance, monthly deposit deduction, and all payment data (excluding utilities) are recorded directly on the `Lease` model (neither `Room` nor `Customer` owns these fields).
+   - Minimum deposit threshold, base rent fee, base deposit, rent fee, initial deposit, current deposit balance, monthly deposit deduction, and all room-fee payment data are recorded directly on the `Lease` model (neither `Room` nor `Customer` owns these fields).
    - Active leases deduct a set monthly amount (`monthly_deposit_deduction`) from the tenant's deposit each billing cycle.
    - While the tenant's remaining deposit (`current_deposit_balance`) is greater than the lease's `minimum_deposit_threshold`, the monthly deposit deduction is subtracted and capped so the deposit balance does not drop below this threshold.
    - When the remaining deposit is equal to or lower than `minimum_deposit_threshold`, monthly deposit deductions stop completely (`0.00` deducted), and the customer pays the full `rent_fee`.
-3. **Utility Supplier Bank Account Details:**
-   - The entire system / building maintains official utility supplier bank account details (for Ceylon Electricity Board and National Water Supply and Drainage Board).
+3. **Supplier Bank Account Details (Separate Electricity & Water):**
+   - The system maintains official bank account details for **Ceylon Electricity Board (CEB)** and **National Water Supply and Drainage Board (NWSDB)**.
    - Bank account numbers default to **`123456789`** for both electricity and water.
-   - Staff/admin can retrieve and update these bank details at any time via `GET/PUT/PATCH/POST /api/utility-supplier-accounts/` or alias `GET/PUT/PATCH/POST /api/utilities/supplier-bank-details/`.
-4. **Meter-Reading Utility Billing, Monthly Default Rates & Selected Room Overrides:**
-   - Users **never enter raw electricity or water usage units**. Instead, users enter each room's **meter readings** (`electricity_meter_reading`, `water_meter_reading`).
-   - Usage units are calculated automatically by the backend as `this_month_meter_reading - previous_month_meter_reading` (using the room's prior month reading by default, or an optional supplied `previous_*_meter_reading` baseline; readings cannot decrease below the previous reading).
-   - Admin submits the month's total building electricity and water bills alongside each room's meter readings via `POST /api/utilities/building-bill/`.
-   - Admin also enters the building's total usage according to the supplier bills: `supplier_electricity_units` and `supplier_water_units`.
-   - The system automatically calculates each month's default per-unit rates by dividing each total building bill by the sum of calculated usage units across all rooms:
+   - Staff/admin can retrieve and update electricity and water bank details separately via `GET/PUT/PATCH/POST /api/electricity-supplier-accounts/` (or `/api/electricity/supplier-bank-details/`) and `GET/PUT/PATCH/POST /api/water-supplier-accounts/` (or `/api/water/supplier-bank-details/`), or together via `/api/utility-supplier-accounts/`.
+4. **Separate Meter-Reading Billing (Electricity & Water), Monthly Default Rates & Selected Room Overrides:**
+   - Users **never enter raw electricity or water usage units**. Instead, users enter each room's **meter readings** separately for electricity (`electricity_meter_reading`) and water (`water_meter_reading`).
+   - Usage units are calculated automatically by the backend as `this_month_meter_reading - previous_month_meter_reading`.
+   - Admin submits the month's building electricity bill via `POST /api/electricity/building-bill/` (or `POST /api/building-electricity/`) and the building water bill separately via `POST /api/water/building-bill/` (or `POST /api/building-water/`).
+   - The system independently calculates each month's default per-unit rate:
      - `default_electricity_unit_price = total_building_electricity_bill / sum(room_electricity_units)`
      - `default_water_unit_price = total_building_water_bill / sum(room_water_units)`
-   - Usage discrepancies are also calculated: `electricity_units_difference = supplier_electricity_units - sum(room_electricity_units)` and `water_units_difference = supplier_water_units - sum(room_water_units)`.
-   - All unselected rooms receive the calculated default per-unit rates for that month.
-5. **Strict Payment Separation (Property Owner vs. Utility Supplier):**
-   - **Room Fee Payments** (`Payment`, `Lease.rent_credit_balance`) are paid to the **property owner** and are counted in accommodation revenue.
-   - **Utility Bill Payments** (`UtilityPayment`, `Room.utility_credit_balance`) are paid to the **utility supplier** and are never mixed with room fee payments or accommodation income.
+   - Usage discrepancies are tracked separately: `electricity_units_difference = supplier_electricity_units - sum(room_electricity_units)` and `water_units_difference = supplier_water_units - sum(room_water_units)`.
+   - Custom rates for selected rooms can be overridden inline or via `POST /api/electricity/set-unit-prices/` (`/{id}/set-unit-prices/`) and `POST /api/water/set-unit-prices/` (`/{id}/set-unit-prices/`).
+   - Previous months' meter readings can be fetched separately via `GET /api/electricity/previous-readings/` and `GET /api/water/previous-readings/` (or per room via `/api/rooms/{id}/previous-electricity-readings/` and `/api/rooms/{id}/previous-water-readings/`).
+5. **Strict Three-Way Separation (Property Manager vs. Electricity Supplier vs. Water Supplier):**
+   - Monthly payments and records are handled across **three completely separate streams**:
+     - **Room Fee Payments** (`Payment`, `Lease.rent_credit_balance`, `POST /api/payments/`): Paid to the **Property Owner / Property Manager** and counted as accommodation income (`total_amount_due = rent_fee - deposit_deducted`).
+     - **Electricity Payments** (`ElectricityPayment`, `Room.electricity_credit_balance`, `POST /api/electricity/{id}/record-payment/` or `POST /api/electricity-payments/`): Paid directly to the **Electricity Supplier** and excluded from accommodation income.
+     - **Water Payments** (`WaterPayment`, `Room.water_credit_balance`, `POST /api/water/{id}/record-payment/` or `POST /api/water-payments/`): Paid directly to the **Water Supplier** and excluded from accommodation income.
+   - **Example:** If a customer has `30,000.00` rent fee, `10,000.00` electricity bill, and `5,000.00` water bill, the gross total across all three is `45,000.00` (`30,000` to property manager, `10,000` directly to electricity supplier, `5,000` directly to water supplier). If ONLY the water bill is paid with an extra `5,000.00` (`10,000.00` paid to water supplier), this month's remaining `total_fee` becomes `40,000.00`, and the extra `5,000.00` is stored in `room.water_credit_balance` and automatically deducted **only** from next month's water bill (leaving electricity and rent unaffected).
 6. **Bill Regeneration, Overpayment Reconciliation & Recorrection Audit Logs:**
-   - Regenerating utility bills (`POST /api/utilities/building-bill/` or `POST /api/building-utilities/` or updating unit prices via `set-unit-prices`) or regenerating room fee bills (`POST /api/bills/regenerate-monthly/` or `POST /api/bills/generate_monthly/` with `regenerate: true`) replaces old bill amounts and automatically reconciles existing payments and advance credits.
-   - If a bill is recorrected downward below what was already paid/credited, the excess is returned to the respective credit balance (`Room.utility_credit_balance` for utilities, `Lease.rent_credit_balance` for room fees) and `is_paid` is updated.
-   - Every recorrection creates an immutable `BillRecorrectionAuditLog` entry accessible via `GET /api/recorrection-logs/` and `GET /api/reports/recorrection-logs/`.
+   - Regenerating electricity bills (`POST /api/electricity/building-bill/`, `/api/building-electricity/`, `/api/electricity/set-unit-prices/`), water bills (`POST /api/water/building-bill/`, `/api/building-water/`, `/api/water/set-unit-prices/`), or room fee bills (`POST /api/bills/regenerate-monthly/` or `POST /api/bills/generate_monthly/` with `regenerate: true`) automatically reconciles existing payments and respective advance credit balances (`Room.electricity_credit_balance`, `Room.water_credit_balance`, `Lease.rent_credit_balance`).
+   - Every recorrection creates an immutable `BillRecorrectionAuditLog` entry (`bill_category`: `electricity`, `water`, or `room_fee`) accessible via `GET /api/recorrection-logs/` and `GET /api/reports/recorrection-logs/`.
 7. **Report Endpoints Documentation:**
    - Full details and sample payloads for all reporting endpoints are documented in [REPORT_API_DOCUMENTATION.md](REPORT_API_DOCUMENTATION.md).
-   - **Custom Rates for Selected Rooms**: Admin can send custom per-unit rates for specific rooms directly in the `POST /api/utilities/building-bill/` request (inline in `room_readings` or via the top-level `custom_rates` map), or change rates afterward for individual (`POST /api/utilities/{id}/set-unit-prices/`) or multiple selected rooms (`POST /api/utilities/set-unit-prices/`), which automatically recalculates room costs.
-   - **Previous Months' Meter Readings Endpoint**: Query `GET /api/utilities/previous-readings/?billing_month=YYYY-MM` (aliases `/api/utilities/previous-meter-readings/` and `/api/utilities/latest-readings/`) or `GET /api/rooms/{id}/previous-readings/` to retrieve prior months' meter readings before entry.
-   - **Room Utility History**: The multi-month utility history of any room is queryable via `GET /api/rooms/{id}/utility-history/` or `GET /api/utilities/room-history/?room_id={id}`.
-   - **Monthly All-Rooms Summary**: Complete room-by-room utility metrics and bills for a selected month are queryable via `GET /api/utilities/monthly-summary/?billing_month=YYYY-MM`.
-5. **Strict Separation of Utility Payments & Lease Payments:**
-   - Utility payments and lease rent payments **must NEVER be mixed**:
-     - **Lease Payments:** Recorded via `POST /api/payments/` (`Payment` model with foreign key `lease`, `bill`). These represent rental income for the accommodation business.
-     - **Utility Payments:** Recorded via `POST /api/utilities/{id}/record-payment/` or `POST /api/utility-payments/` (`UtilityPayment` model with foreign key `utility_record`).
-   - Tenants pay utility bills directly to utility suppliers. When a customer notifies staff that their utility bills are paid (or provides a bank transfer/counter receipt reference), staff records it via the utility payment endpoint.
-   - Utility payments are completely pass-through and **must NOT be recorded as business or accommodation income**. In financial reports (`GET /api/reports/profits/`), utility payments are explicitly excluded from `total_revenue`. A dedicated report (`GET /api/reports/utility-payments/`) tracks supplier payments and unpaid records.
-6. **Customer Overpayments & Advance Utility Credit Balance:**
-   - Customers may pay more than their billed utility amount to the supplier (e.g. paying advance or rounding up).
-   - When an overpayment is recorded via `POST /api/utilities/{id}/record-payment/` or `POST /api/utility-payments/` (`amount_paid > remaining_cost`), the excess amount is automatically credited to the room's advance utility credit balance (`room.utility_credit_balance`).
-   - When subsequent monthly utility bills are generated via `POST /api/utilities/building-bill/`, any available `room.utility_credit_balance` is **automatically applied to cover or reduce the new month's bill**:
-     - If `credit >= new_bill`: bill is marked fully paid (`is_paid = True`), an auto-payment record with `receipt_reference="ADVANCE-CREDIT"` is created, and credit is decremented.
-     - If `credit < new_bill`: credit is applied as a partial payment, credit drops to `0.00`, and remaining balance is left due.
-   - Staff can also manually apply credit at any time via `POST /api/utilities/{id}/apply-credit/` or check credit via `GET /api/rooms/{id}/utility-credit/`.
-7. **Leaving Room & Repair Deduction:**
-   - When a customer is leaving the room (`POST /api/leases/{id}/terminate/`, `POST /api/leases/{id}/leave-room/`, or `POST /api/customers/{id}/leave-room/`), the system automatically deducts all repair costs from their remaining deposit balance:
-     - All pre-existing undeducted repairs recorded for the lease (`RoomRepair` records with `deducted_from_deposit=False`).
-     - Any new move-out repairs passed in the termination request payload (either via `repair_cost` or `repairs` list).
-   - All deducted repairs are marked as `deducted_from_deposit=True` and `completed`.
-   - The remaining deposit refund is calculated and returned (`final_deposit_refund`). If repair costs exceed the deposit, `final_deposit_refund` is `0.00` and the outstanding damage cost is returned in `amount_owed_by_customer`.
-8. **Auto-clearing Bills on Payment:**
-   - Recording lease rent payments accumulates against the bill's `total_amount_due`. When fully paid, the bill's `is_paid` status automatically flips to `true`.
-   - Utility payments made to suppliers accumulate against the utility record's `total_cost`. When fully settled, `utility_record.is_paid` automatically flips to `true`.
+8. **Leaving Room & Repair Deduction:**
+   - When a customer is leaving the room (`POST /api/leases/{id}/terminate/`, `POST /api/leases/{id}/leave-room/`, or `POST /api/customers/{id}/leave-room/`), the system automatically deducts all undeducted repair costs (`RoomRepair` records with `deducted_from_deposit=False`) plus any new move-out repairs from their remaining deposit balance and returns `final_deposit_refund` (or `amount_owed_by_customer`).
+9. **Auto-clearing Bills on Payment:**
+   - Room fee, electricity, and water payments accumulate independently against `Bill.total_amount_due`, `ElectricityRecord.electricity_cost`, and `WaterRecord.water_cost`, setting each record's `is_paid` to `true` when settled.
 
 ---
 
@@ -88,9 +70,9 @@ Authorization: Bearer <access_token>
 4. [Customers API](#4-customers-api)
 5. [Immediate Contacts API](#5-immediate-contacts-api)
 6. [Leases API](#6-leases-api)
-7. [Utility Supplier Bank Accounts API](#7-utility-supplier-bank-accounts-api)
-8. [Utility Records & Building Utilities API](#8-utility-records--building-utilities-api)
-9. [Utility Payments to Suppliers & Overpayment Credits API](#9-utility-payments-to-suppliers--overpayment-credits-api)
+7. [Supplier Bank Accounts API (Electricity & Water)](#7-supplier-bank-accounts-api-electricity--water)
+8. [Electricity & Water Records API (Separate Building & Room Endpoints)](#8-electricity--water-records-api-separate-building--room-endpoints)
+9. [Electricity & Water Supplier Payments & Overpayment Credits API](#9-electricity--water-supplier-payments--overpayment-credits-api)
 10. [Bills API](#10-bills-api)
 11. [Payments API (Lease Rent)](#11-payments-api-lease-rent)
 12. [Room Repairs API](#12-room-repairs-api)
@@ -188,7 +170,7 @@ Authorization: Bearer <access_token>
 - **Endpoint:** `GET /api/rooms/`
 - **Query Parameters:**
   - `room_type` *(optional)*: Filter rooms strictly by type (`single`, `double`, or `annex`). Example: `GET /api/rooms/?room_type=annex`
-- **Summary:** Retrieves all rental rooms configured in the system. Rooms store only `room_number`, `room_type` (`single`, `double`, `annex`), `note`, and system-managed `utility_credit_balance` and `created_at` (rent, deposit, and monthly utility unit rates live on leases and monthly utility records).
+- **Summary:** Retrieves all rental rooms configured in the system. Rooms store `room_number`, `room_type` (`single`, `double`, `annex`), `note`, and separate system-managed `electricity_credit_balance`, `water_credit_balance`, and `created_at` (rent, deposit, and monthly unit rates live on leases and monthly electricity/water records).
 - **Example Request:**
   ```http
   GET /api/rooms/?room_type=annex HTTP/1.1
@@ -206,7 +188,8 @@ Authorization: Bearer <access_token>
       "room_number": "101",
       "room_type": "single",
       "note": "Ground floor single room",
-      "utility_credit_balance": "0.00",
+      "electricity_credit_balance": "0.00",
+      "water_credit_balance": "0.00",
       "created_at": "2026-10-10T09:30:00Z"
     },
     {
@@ -214,7 +197,8 @@ Authorization: Bearer <access_token>
       "room_number": "A201",
       "room_type": "annex",
       "note": "Private annex with separate entrance",
-      "utility_credit_balance": "500.00",
+      "electricity_credit_balance": "500.00",
+      "water_credit_balance": "200.00",
       "created_at": "2026-10-10T09:35:00Z"
     }
   ]
@@ -246,7 +230,8 @@ Authorization: Bearer <access_token>
     "room_number": "103",
     "room_type": "double",
     "note": "Second floor double room with balcony",
-    "utility_credit_balance": "0.00",
+    "electricity_credit_balance": "0.00",
+    "water_credit_balance": "0.00",
     "created_at": "2026-10-11T14:10:00Z"
   }
   ```
@@ -270,7 +255,8 @@ Authorization: Bearer <access_token>
     "room_number": "101",
     "room_type": "single",
     "note": "Ground floor single room",
-    "utility_credit_balance": "0.00",
+    "electricity_credit_balance": "0.00",
+    "water_credit_balance": "0.00",
     "created_at": "2026-10-10T09:30:00Z"
   }
   ```
@@ -301,7 +287,8 @@ Authorization: Bearer <access_token>
     "room_number": "101",
     "room_type": "single",
     "note": "Newly painted single room",
-    "utility_credit_balance": "0.00",
+    "electricity_credit_balance": "0.00",
+    "water_credit_balance": "0.00",
     "created_at": "2026-10-10T09:30:00Z"
   }
   ```
@@ -330,7 +317,8 @@ Authorization: Bearer <access_token>
     "room_number": "101",
     "room_type": "single",
     "note": "AC unit serviced in Oct 2026",
-    "utility_credit_balance": "0.00",
+    "electricity_credit_balance": "0.00",
+    "water_credit_balance": "0.00",
     "created_at": "2026-10-10T09:30:00Z"
   }
   ```
@@ -349,65 +337,16 @@ Authorization: Bearer <access_token>
   HTTP/1.1 204 No Content
   ```
 
-### 3.7 View Room Utility History
-- **Endpoint:** `GET /api/rooms/{id}/utility-history/` (also aliased at `GET /api/rooms/{id}/utilities/`)
-- **Summary:** Retrieves the multi-month utility history for the selected room, ordered from newest to oldest month. Shows previous/current meter readings, calculated electricity and water units, applied per-unit rates, total bills, and supplier payment statuses.
-- **Example Request:**
-  ```http
-  GET /api/rooms/1/utility-history/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "id": 14,
-      "room": 1,
-      "room_number": "101",
-      "room_type": "single",
-      "billing_month": "2026-10-01",
-      "previous_electricity_meter_reading": "1040.00",
-      "electricity_meter_reading": "1085.00",
-      "electricity_units": "45.00",
-      "electricity_unit_price": "120.00",
-      "electricity_cost": "5400.00",
-      "previous_water_meter_reading": "515.00",
-      "water_meter_reading": "533.00",
-      "water_units": "18.00",
-      "water_unit_price": "85.00",
-      "water_cost": "1530.00",
-      "total_cost": "6930.00",
-      "is_paid": false,
-      "total_utility_paid": "0.00",
-      "due_date": "2026-10-25"
-    },
-    {
-      "id": 4,
-      "room": 1,
-      "room_number": "101",
-      "room_type": "single",
-      "billing_month": "2026-09-01",
-      "previous_electricity_meter_reading": "1000.00",
-      "electricity_meter_reading": "1040.00",
-      "electricity_units": "40.00",
-      "electricity_unit_price": "115.00",
-      "electricity_cost": "4600.00",
-      "previous_water_meter_reading": "500.00",
-      "water_meter_reading": "515.00",
-      "water_units": "15.00",
-      "water_unit_price": "80.00",
-      "water_cost": "1200.00",
-      "total_cost": "5800.00",
-      "is_paid": true,
-      "total_utility_paid": "5800.00",
-      "due_date": "2026-09-25"
-    }
-  ]
-  ```
+### 3.7 View Room Electricity & Water History
+- **Electricity History Endpoint:** `GET /api/rooms/{id}/electricity-history/` (alias `GET /api/rooms/{id}/electricity/`)
+- **Water History Endpoint:** `GET /api/rooms/{id}/water-history/` (alias `GET /api/rooms/{id}/water/`)
+- **Previous Meter Readings Endpoints:**
+  - `GET /api/rooms/{id}/previous-electricity-readings/` (alias `previous-electricity-meter-readings`)
+  - `GET /api/rooms/{id}/previous-water-readings/` (alias `previous-water-meter-readings`)
+- **Advance Credit Endpoints:**
+  - `GET /api/rooms/{id}/electricity-credit/`
+  - `GET /api/rooms/{id}/water-credit/`
+- **Summary:** Retrieves separate multi-month electricity and water history, previous meter readings, and advance credit balances for the selected room.
 
 ---
 
@@ -1141,258 +1080,61 @@ Authorization: Bearer <access_token>
 
 ---
 
-## 7. Utility Supplier Bank Accounts API
+## 7. Supplier Bank Accounts API (Electricity & Water)
 
-The entire building / system maintains centralized bank account records for utility providers (electricity and water). Customers transfer or deposit their utility bill payments directly into these accounts and provide payment receipts or references to staff.
+The building maintains official bank account records for the electricity supplier (CEB) and water supplier (NWSDB). Customers pay each supplier directly and provide payment receipt references to staff.
 
-### 7.1 Retrieve Utility Supplier Bank Details
-- **Endpoints:**
-  - `GET /api/utility-supplier-accounts/` (Primary)
-  - `GET /api/utilities/supplier-bank-details/` (Convenience Alias)
-- **Summary:** Retrieves official bank account information for electricity and water utility suppliers. Account numbers default to **`123456789`** for both electricity and water upon first query if not previously configured.
-- **Example Request:**
-  ```http
-  GET /api/utility-supplier-accounts/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
+### 7.1 Retrieve Supplier Bank Details
+- **Electricity Supplier Endpoints:**
+  - `GET /api/electricity-supplier-accounts/`
+  - `GET /api/electricity/supplier-bank-details/`
+- **Water Supplier Endpoints:**
+  - `GET /api/water-supplier-accounts/`
+  - `GET /api/water/supplier-bank-details/`
+- **Combined Utility Supplier Endpoint:**
+  - `GET /api/utility-supplier-accounts/`
+- **Summary:** Account numbers default to **`123456789`** for both electricity and water upon first query.
 
-  {
-    "id": 1,
-    "electricity_supplier_name": "Ceylon Electricity Board (CEB)",
-    "electricity_bank_name": "Bank of Ceylon",
-    "electricity_branch": "Main Branch",
-    "electricity_account_name": "Ceylon Electricity Board",
-    "electricity_account_number": "123456789",
-    "water_supplier_name": "National Water Supply and Drainage Board (NWSDB)",
-    "water_bank_name": "Bank of Ceylon",
-    "water_branch": "Main Branch",
-    "water_account_name": "National Water Supply and Drainage Board",
-    "water_account_number": "123456789",
-    "notes": "Please transfer utility payments to the respective supplier bank account and provide the transaction receipt reference.",
-    "updated_at": "2026-10-16T18:30:00Z"
-  }
-  ```
-
-### 7.2 Update Utility Supplier Bank Details
-- **Endpoints:**
-  - `POST /api/utility-supplier-accounts/` or `PUT /api/utility-supplier-accounts/current/` or `PATCH /api/utility-supplier-accounts/current/`
-  - `POST /api/utilities/supplier-bank-details/` or `PUT /api/utilities/supplier-bank-details/`
-- **Summary:** Updates official supplier bank accounts, branches, or reference instructions for electricity and water. Updates persist in the database singleton.
-- **Example Request:**
-  ```http
-  POST /api/utility-supplier-accounts/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "electricity_bank_name": "Commercial Bank",
-    "electricity_branch": "Kollupitiya Branch",
-    "electricity_account_name": "Ceylon Electricity Board",
-    "electricity_account_number": "123456789",
-    "water_bank_name": "Bank of Ceylon",
-    "water_branch": "Main Branch",
-    "water_account_name": "National Water Supply and Drainage Board",
-    "water_account_number": "123456789",
-    "notes": "Include your Room Number as payment reference on bank deposit slip or online transfer."
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "id": 1,
-    "electricity_supplier_name": "Ceylon Electricity Board (CEB)",
-    "electricity_bank_name": "Commercial Bank",
-    "electricity_branch": "Kollupitiya Branch",
-    "electricity_account_name": "Ceylon Electricity Board",
-    "electricity_account_number": "123456789",
-    "water_supplier_name": "National Water Supply and Drainage Board (NWSDB)",
-    "water_bank_name": "Bank of Ceylon",
-    "water_branch": "Main Branch",
-    "water_account_name": "National Water Supply and Drainage Board",
-    "water_account_number": "123456789",
-    "notes": "Include your Room Number as payment reference on bank deposit slip or online transfer.",
-    "updated_at": "2026-10-16T18:35:00Z"
-  }
-  ```
+### 7.2 Update Supplier Bank Details
+- **Electricity:** `POST/PUT/PATCH /api/electricity-supplier-accounts/` (or `/api/electricity-supplier-accounts/current/` or `/api/electricity/supplier-bank-details/`)
+- **Water:** `POST/PUT/PATCH /api/water-supplier-accounts/` (or `/api/water-supplier-accounts/current/` or `/api/water/supplier-bank-details/`)
+- **Combined:** `POST /api/utility-supplier-accounts/` or `PUT/PATCH /api/utility-supplier-accounts/current/`
 
 ---
 
-## 8. Utility Records & Building Utilities API
+## 8. Electricity & Water Records API (Separate Building & Room Endpoints)
 
-### 8.1 List Utility Records
-- **Endpoint:** `GET /api/utilities/`
-- **Summary:** Retrieves monthly utility records recorded for rooms. Each record includes previous and current meter readings, auto-calculated usage units (`this_month_reading - previous_month_reading`), applied per-unit rates, costs, payments made, remaining balance, and the room's current credit balance.
+Electricity and water records are completely separate resources with independent meter readings, per-unit rates, bills, and advance credits.
+
+### 8.1 Electricity Records CRUD
+- `GET /api/electricity/` (supports `?room_id=&billing_month=&is_paid=`)
+- `POST /api/electricity/` — Records monthly `electricity_meter_reading` (rejects raw `electricity_units`).
+- `GET/PUT/PATCH/DELETE /api/electricity/{id}/`
+- `POST /api/electricity/{id}/mark_paid/`
+
+### 8.2 Water Records CRUD
+- `GET /api/water/` (supports `?room_id=&billing_month=&is_paid=`)
+- `POST /api/water/` — Records monthly `water_meter_reading` (rejects raw `water_units`).
+- `GET/PUT/PATCH/DELETE /api/water/{id}/`
+- `POST /api/water/{id}/mark_paid/`
+
+### 8.3 Get Previous Months' Meter Readings (Separate)
+- **Electricity:**
+  - `GET /api/electricity/previous-readings/` (aliases: `previous-meter-readings`, `latest-readings`)
+  - `GET /api/rooms/{id}/previous-electricity-readings/` (alias: `previous-electricity-meter-readings`)
+- **Water:**
+  - `GET /api/water/previous-readings/` (aliases: `previous-meter-readings`, `latest-readings`)
+  - `GET /api/rooms/{id}/previous-water-readings/` (alias: `previous-water-meter-readings`)
+- **Query Parameters:** `?billing_month=YYYY-MM&room_id=<id>&months=<n>`
+
+### 8.4 Enter Monthly Building Electricity Bill & Calculate Room Rates
+- **Endpoint:** `POST /api/electricity/building-bill/` (and `POST /api/building-electricity/`)
+- **Summary:** Enters `total_electricity_bill`, optional `supplier_electricity_units`, each room's `electricity_meter_reading` in `room_readings`, and optional `custom_rates`.
+  - Automatically calculates `default_electricity_unit_price = total_electricity_bill / sum(room_electricity_units)` and `electricity_units_difference = supplier_electricity_units - total_electricity_units`.
+  - Automatically applies `room.electricity_credit_balance` only (`receipt_reference="ADVANCE-ELECTRICITY-CREDIT"`).
 - **Example Request:**
   ```http
-  GET /api/utilities/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "id": 1,
-      "room": 1,
-      "room_number": "101",
-      "room_type": "single",
-      "customer_name": "Kasun Perera",
-      "billing_month": "2026-10-01",
-      "previous_electricity_meter_reading": "1000.00",
-      "electricity_meter_reading": "1060.00",
-      "electricity_units": "60.00",
-      "electricity_unit_price": "120.00",
-      "electricity_cost": "7200.00",
-      "previous_water_meter_reading": "500.00",
-      "water_meter_reading": "530.00",
-      "water_units": "30.00",
-      "water_unit_price": "120.00",
-      "water_cost": "3600.00",
-      "total_cost": "10800.00",
-      "total_utility_paid": "10800.00",
-      "remaining_balance": "0.00",
-      "room_credit_balance": "0.00",
-      "is_paid": true,
-      "due_date": "2026-10-28",
-      "created_at": "2026-10-05T09:00:00Z"
-    }
-  ]
-  ```
-
-### 8.2 Create Utility Record
-- **Endpoint:** `POST /api/utilities/`
-- **Summary:** Records monthly electricity and water **meter readings** for an individual room. Direct `electricity_units` / `water_units` input is rejected — usage units are calculated automatically as `electricity_meter_reading - previous_electricity_meter_reading` (and same for water), where previous readings are automatically pulled from the prior month unless supplied explicitly. Unit prices default to that month's `BuildingUtilityBill` calculated rates if omitted.
-- **Example Request:**
-  ```http
-  POST /api/utilities/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "room": 1,
-    "billing_month": "2026-11-01",
-    "electricity_meter_reading": "1100.00",
-    "electricity_unit_price": "60.00",
-    "water_meter_reading": "555.00",
-    "water_unit_price": "35.00",
-    "due_date": "2026-11-25"
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 201 Created
-  Content-Type: application/json
-
-  {
-    "id": 2,
-    "room": 1,
-    "room_number": "101",
-    "room_type": "single",
-    "billing_month": "2026-11-01",
-    "previous_electricity_meter_reading": "1060.00",
-    "electricity_meter_reading": "1100.00",
-    "electricity_units": "40.00",
-    "electricity_unit_price": "60.00",
-    "electricity_cost": "2400.00",
-    "previous_water_meter_reading": "530.00",
-    "water_meter_reading": "555.00",
-    "water_units": "25.00",
-    "water_unit_price": "35.00",
-    "water_cost": "875.00",
-    "total_cost": "3275.00",
-    "total_utility_paid": "0.00",
-    "remaining_balance": "3275.00",
-    "room_credit_balance": "0.00",
-    "is_paid": false,
-    "due_date": "2026-11-25",
-    "created_at": "2026-10-16T14:40:00Z"
-  }
-  ```
-
-### 8.3 Retrieve Utility Record
-- **Endpoint:** `GET /api/utilities/{id}/`
-- **Summary:** Retrieves details of a specific utility record, including payment receipts, remaining amount due, and room credit balance.
-
-### 8.4 Update Utility Record (Full)
-- **Endpoint:** `PUT /api/utilities/{id}/`
-- **Summary:** Fully updates a utility record and recalculates usage and costs.
-
-### 8.5 Partial Update Utility Record
-- **Endpoint:** `PATCH /api/utilities/{id}/`
-- **Summary:** Partially updates fields in a utility record.
-
-### 8.6 Delete Utility Record
-- **Endpoint:** `DELETE /api/utilities/{id}/`
-- **Summary:** Deletes a utility record.
-
-### 8.7 Mark Utility Bill Paid
-- **Endpoint:** `POST /api/utilities/{id}/mark_paid/`
-- **Summary:** Sets `is_paid=True` on a utility record.
-
-### 8.8 Get Previous Months' Meter Readings
-- **Endpoints:**
-  - `GET /api/utilities/previous-readings/` (aliases: `GET /api/utilities/previous-meter-readings/`, `GET /api/utilities/latest-readings/`)
-  - `GET /api/rooms/{id}/previous-readings/` (alias: `GET /api/rooms/{id}/previous-meter-readings/`)
-- **Query Parameters:**
-  - `billing_month` *(optional)*: Month in `YYYY-MM` or `YYYY-MM-DD` format; filters strictly to months before that billing month (`billing_month__lt`).
-  - `room_id` / `room` / `room_number` *(optional, on `/api/utilities/previous-readings/`)*: Filter to a specific room.
-  - `months` *(optional)*: Positive integer limiting the number of historical entries returned in `previous_months`.
-- **Summary:** Returns each room's most recent previous electricity and water meter readings (for automatic subtraction / UI pre-fill) along with `previous_months` chronological meter readings and computed usage units.
-- **Example Response (`GET /api/utilities/previous-readings/?billing_month=2026-10`):**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "room_id": 1,
-      "room_number": "101",
-      "room_type": "single",
-      "billing_month": "2026-10-01",
-      "last_electricity_billing_month": "2026-09-01",
-      "previous_electricity_meter_reading": "1040.00",
-      "last_water_billing_month": "2026-09-01",
-      "previous_water_meter_reading": "515.00",
-      "previous_months": [
-        {
-          "utility_record_id": 4,
-          "billing_month": "2026-09-01",
-          "previous_electricity_meter_reading": "1000.00",
-          "electricity_meter_reading": "1040.00",
-          "electricity_units": "40.00",
-          "previous_water_meter_reading": "500.00",
-          "water_meter_reading": "515.00",
-          "water_units": "15.00"
-        }
-      ]
-    }
-  ]
-  ```
-
-### 8.9 Enter Monthly Building Utility Bill & Calculate Room Rates
-- **Endpoint:** `POST /api/utilities/building-bill/`
-- **Summary:** Enters each month's total building electricity and water bills, optional **supplier usage readings** (`supplier_electricity_units`, `supplier_water_units`), each room's **meter readings** (`room_readings`), and optional **custom per-unit rates for selected rooms**.
-  - Rejects raw `electricity_units` / `water_units`. Automatically calculates each room's usage as `this_month_reading - previous_month_reading` (pulling prior month's reading or using `previous_*_meter_reading` if supplied).
-  - Computes monthly default per-unit prices: `default_electricity_unit_price = total_electricity_bill / sum(all_room_electricity_units)` and `default_water_unit_price = total_water_bill / sum(all_room_water_units)`.
-  - Selected rooms can override default unit rates either inline inside `room_readings` (via `electricity_unit_price` / `custom_electricity_unit_price` / `water_unit_price` / `custom_water_unit_price`) or via the top-level `custom_rates` map (keyed by `room_id` or `room_number`). All other rooms automatically use the calculated monthly default rates.
-  - Records supplier usage so frontend can compare supplier data with the sum of room meters (`electricity_units_difference` = `supplier_units - room_sum`, `water_units_difference` = `supplier_units - room_sum`).
-  - **Advance Credit Handling:** If any room has an existing `utility_credit_balance > 0` from past customer overpayments, the backend **automatically applies that credit toward this new month's bill** (`receipt_reference="ADVANCE-CREDIT"`), reducing the room credit balance and auto-clearing the bill if fully covered.
-- **Example Request:**
-  ```http
-  POST /api/utilities/building-bill/ HTTP/1.1
+  POST /api/electricity/building-bill/ HTTP/1.1
   Host: thiranda-813344430767.asia-southeast1.run.app
   Authorization: Bearer <jwt_token>
   Content-Type: application/json
@@ -1400,344 +1142,82 @@ The entire building / system maintains centralized bank account records for util
   {
     "billing_month": "2026-10-01",
     "total_electricity_bill": 24000.00,
-    "total_water_bill": 12000.00,
     "supplier_electricity_units": 215.00,
+    "due_date": "2026-10-28",
+    "room_readings": [
+      { "room_number": "101", "electricity_meter_reading": 1060.00 },
+      { "room_number": "102", "electricity_meter_reading": 2080.00, "electricity_unit_price": 135.00 }
+    ]
+  }
+  ```
+
+### 8.5 Enter Monthly Building Water Bill & Calculate Room Rates
+- **Endpoint:** `POST /api/water/building-bill/` (and `POST /api/building-water/`)
+- **Summary:** Enters `total_water_bill`, optional `supplier_water_units`, each room's `water_meter_reading` in `room_readings`, and optional `custom_rates`.
+  - Automatically calculates `default_water_unit_price = total_water_bill / sum(room_water_units)` and `water_units_difference = supplier_water_units - total_water_units`.
+  - Automatically applies `room.water_credit_balance` only (`receipt_reference="ADVANCE-WATER-CREDIT"`).
+- **Example Request:**
+  ```http
+  POST /api/water/building-bill/ HTTP/1.1
+  Host: thiranda-813344430767.asia-southeast1.run.app
+  Authorization: Bearer <jwt_token>
+  Content-Type: application/json
+
+  {
+    "billing_month": "2026-10-01",
+    "total_water_bill": 12000.00,
     "supplier_water_units": 108.00,
     "due_date": "2026-10-28",
     "room_readings": [
-      {
-        "room_number": "101",
-        "electricity_meter_reading": 1060.00,
-        "water_meter_reading": 530.00
-      },
-      {
-        "room_number": "102",
-        "electricity_meter_reading": 2080.00,
-        "water_meter_reading": 840.00,
-        "electricity_unit_price": 135.00
-      },
-      {
-        "room_number": "A201",
-        "electricity_meter_reading": 560.00,
-        "water_meter_reading": 330.00
-      }
-    ],
-    "custom_rates": {
-      "A201": {
-        "water_unit_price": 125.00
-      }
-    }
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 201 Created
-  Content-Type: application/json
-
-  {
-    "message": "Successfully calculated monthly utilities for 2026-10.",
-    "billing_month": "2026-10-01",
-    "building_utility_bill": {
-      "id": 1,
-      "billing_month": "2026-10-01",
-      "total_electricity_bill": "24000.00",
-      "total_water_bill": "12000.00",
-      "total_electricity_units": "200.00",
-      "total_water_units": "100.00",
-      "supplier_electricity_units": "215.00",
-      "supplier_water_units": "108.00",
-      "electricity_units_difference": "15.00",
-      "water_units_difference": "8.00",
-      "electricity_unit_price": "120.00",
-      "water_unit_price": "120.00",
-      "due_date": "2026-10-28"
-    },
-    "default_electricity_unit_price": "120.00",
-    "default_water_unit_price": "120.00",
-    "electricity_unit_price": "120.00",
-    "water_unit_price": "120.00",
-    "total_electricity_units": "200.00",
-    "total_water_units": "100.00",
-    "supplier_electricity_units": "215.00",
-    "supplier_water_units": "108.00",
-    "electricity_units_difference": "15.00",
-    "water_units_difference": "8.00",
-    "total_building_usage": {
-      "electricity_units": "200.00",
-      "water_units": "100.00"
-    },
-    "supplier_usage": {
-      "electricity_units": "215.00",
-      "water_units": "108.00"
-    },
-    "usage_difference": {
-      "electricity_units_difference": "15.00",
-      "water_units_difference": "8.00"
-    },
-    "rooms_utility_records": [
-      {
-        "id": 10,
-        "room": 1,
-        "room_number": "101",
-        "room_type": "single",
-        "billing_month": "2026-10-01",
-        "previous_electricity_meter_reading": "1000.00",
-        "electricity_meter_reading": "1060.00",
-        "electricity_units": "60.00",
-        "electricity_unit_price": "120.00",
-        "electricity_cost": "7200.00",
-        "previous_water_meter_reading": "500.00",
-        "water_meter_reading": "530.00",
-        "water_units": "30.00",
-        "water_unit_price": "120.00",
-        "water_cost": "3600.00",
-        "total_cost": "10800.00",
-        "room_credit_balance": "0.00",
-        "is_paid": false,
-        "due_date": "2026-10-28"
-      }
+      { "room_number": "101", "water_meter_reading": 530.00 },
+      { "room_number": "102", "water_meter_reading": 840.00 }
     ]
   }
   ```
 
-### 8.10 View Monthly All-Rooms Utility Summary
-- **Endpoint:** `GET /api/utilities/monthly-summary/`
-- **Query Parameters:**
-  - `billing_month` *(required)*: Month in `YYYY-MM` or `YYYY-MM-DD` format (e.g., `?billing_month=2026-10`).
-- **Summary:** Returns the selected month's utility data for all rooms, including previous/current meter readings, calculated usage units, calculated default per-unit rates, room-specific unit prices, total bills, and supplier discrepancies (`supplier_electricity_units`, `electricity_units_difference`, `supplier_water_units`, `water_units_difference`).
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "billing_month": "2026-10-01",
-    "building_utility_bill": {
-      "id": 1,
-      "billing_month": "2026-10-01",
-      "total_electricity_bill": "24000.00",
-      "total_water_bill": "12000.00",
-      "total_electricity_units": "200.00",
-      "total_water_units": "100.00",
-      "supplier_electricity_units": "215.00",
-      "supplier_water_units": "108.00",
-      "electricity_units_difference": "15.00",
-      "water_units_difference": "8.00",
-      "electricity_unit_price": "120.00",
-      "water_unit_price": "120.00",
-      "due_date": "2026-10-28"
-    },
-    "default_electricity_unit_price": "120.00",
-    "default_water_unit_price": "120.00",
-    "rooms_count": 3,
-    "total_rooms_utility_cost": "36000.00",
-    "supplier_electricity_units": "215.00",
-    "supplier_water_units": "108.00",
-    "electricity_units_difference": "15.00",
-    "water_units_difference": "8.00",
-    "rooms_utility_data": [
-      {
-        "utility_record_id": 10,
-        "room_id": 1,
-        "room_number": "101",
-        "room_type": "single",
-        "customer_name": "Kasun Perera",
-        "previous_electricity_meter_reading": "1000.00",
-        "electricity_meter_reading": "1060.00",
-        "electricity_units": "60.00",
-        "electricity_unit_price": "120.00",
-        "electricity_cost": "7200.00",
-        "previous_water_meter_reading": "500.00",
-        "water_meter_reading": "530.00",
-        "water_units": "30.00",
-        "water_unit_price": "120.00",
-        "water_cost": "3600.00",
-        "total_bill": "10800.00",
-        "total_cost": "10800.00",
-        "is_paid": false,
-        "due_date": "2026-10-28",
-        "room_credit_balance": "0.00"
-      }
-    ]
-  }
-  ```
-
-### 8.11 View Room Utility History
-- **Endpoints:**
-  - `GET /api/utilities/room-history/?room_id={id}`
-  - `GET /api/rooms/{id}/utility-history/`
-- **Summary:** Retrieves chronological utility history, meter readings, usage trends, and costs across all months for a specific room.
-
-### 8.12 Customize / Override Per-Unit Prices for Selected Room(s)
-- **Single Room Endpoint:** `POST /api/utilities/{id}/set-unit-prices/`
-- **Bulk Selected Rooms Endpoint:** `POST /api/utilities/set-unit-prices/`
-- **Summary:** Allows user to change or override the per-unit electricity or water rate for one or multiple selected rooms (`use_default: true` reverts unspecified rates to that month's calculated building rate). Automatically recalculates `electricity_cost`, `water_cost`, `total_cost`, and `is_paid`.
-- **Example Request (Single Room):**
-  ```http
-  POST /api/utilities/10/set-unit-prices/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "electricity_unit_price": "130.00",
-    "water_unit_price": "125.00"
-  }
-  ```
-- **Example Request (Batch Selected Rooms):**
-  ```http
-  POST /api/utilities/set-unit-prices/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "billing_month": "2026-10-01",
-    "custom_rates": [
-      { "room_number": "101", "electricity_unit_price": "130.00" },
-      { "room_number": "102", "use_default": true }
-    ]
-  }
-  ```
-
-### 8.12 View Room Utility Credit Balance
-- **Endpoints:**
-  - `GET /api/rooms/{id}/utility-credit/`
-  - `GET /api/utilities/room-credit/?room_id={id}`
-- **Summary:** Returns the current advance utility credit balance available for a room accumulated from customer overpayments to utility suppliers.
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "room_id": 1,
-    "room_number": "101",
-    "room_type": "single",
-    "utility_credit_balance": "2000.00"
-  }
-  ```
+### 8.6 Monthly Summaries, Room Histories & Unit Price Overrides
+- **Monthly Summaries:**
+  - `GET /api/electricity/monthly-summary/?billing_month=YYYY-MM` (and `/api/building-electricity/monthly-summary/`)
+  - `GET /api/water/monthly-summary/?billing_month=YYYY-MM` (and `/api/building-water/monthly-summary/`)
+- **Room Histories:**
+  - `GET /api/electricity/room-history/?room_id={id}` and `GET /api/rooms/{id}/electricity-history/`
+  - `GET /api/water/room-history/?room_id={id}` and `GET /api/rooms/{id}/water-history/`
+- **Customize / Override Per-Unit Prices:**
+  - Electricity: `POST /api/electricity/{id}/set-unit-prices/` and `POST /api/electricity/set-unit-prices/`
+  - Water: `POST /api/water/{id}/set-unit-prices/` and `POST /api/water/set-unit-prices/`
+- **Room Advance Credit Balances:**
+  - Electricity: `GET /api/rooms/{id}/electricity-credit/` and `GET /api/electricity/room-credit/?room_id={id}`
+  - Water: `GET /api/rooms/{id}/water-credit/` and `GET /api/water/room-credit/?room_id={id}`
 
 ---
 
-## 9. Utility Payments to Suppliers & Overpayment Credits API
+## 9. Electricity & Water Supplier Payments & Overpayment Credits API
 
-Utility payments and lease rent payments **must NEVER be mixed up**:
-- **Lease Rent Payments:** Handled by `POST /api/payments/` (`Payment` model, recorded as business income).
-- **Utility Supplier Payments:** Handled by `POST /api/utilities/{id}/record-payment/` or `POST /api/utility-payments/` (`UtilityPayment` model, paid directly to supplier, **excluded from business income**).
+All three payment streams are strictly separate:
+- **Lease Rent Payments (Property Manager):** `POST /api/payments/` (`Payment`, `Lease.rent_credit_balance`)
+- **Electricity Payments (Electricity Supplier):** `POST /api/electricity/{id}/record-payment/` or `POST /api/electricity-payments/` (`ElectricityPayment`, `Room.electricity_credit_balance`)
+- **Water Payments (Water Supplier):** `POST /api/water/{id}/record-payment/` or `POST /api/water-payments/` (`WaterPayment`, `Room.water_credit_balance`)
 
-### 9.1 Record Utility Payment & Handle Overpayments
-- **Endpoint:** `POST /api/utilities/{id}/record-payment/`
-- **Summary:** Records that a customer has paid their utility bill directly to the supplier.
-  - Takes `amount_paid`, `receipt_reference` (e.g. CEB / NWSDB transaction ID), and optional `payment_date` and `notes`.
-  - **Overpayment Handling:** If a customer pays **more than the bill amount** (e.g., bill is Rs. 6,000.00 and customer paid Rs. 8,000.00 to the supplier), the system marks the bill paid (`is_paid = true`) and automatically adds the excess Rs. 2,000.00 to the room's advance utility credit balance (`room.utility_credit_balance`).
-  - **Future Bill Integration:** In subsequent months when building utility bills are entered (`POST /api/utilities/building-bill/`), this advance credit is automatically deducted to cover or reduce the tenant's new bill!
-- **Example Request (With Overpayment):**
-  ```http
-  POST /api/utilities/10/record-payment/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
+### 9.1 Record Electricity Payment & Overpayment Credit
+- **Endpoint:** `POST /api/electricity/{id}/record-payment/` (and `GET/POST /api/electricity-payments/`)
+- **Summary:** Records a payment made directly to the electricity supplier. Any excess above the remaining electricity bill is added strictly to `room.electricity_credit_balance` and automatically deducts from future electricity bills only.
 
-  {
-    "amount_paid": 8000.00,
-    "payment_date": "2026-10-20",
-    "receipt_reference": "CEB-ONLINE-TXN-998822",
-    "notes": "Customer transferred 8000 to CEB account (includes 2000 advance payment)"
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 201 Created
-  Content-Type: application/json
+### 9.2 Record Water Payment & Overpayment Credit
+- **Endpoint:** `POST /api/water/{id}/record-payment/` (and `GET/POST /api/water-payments/`)
+- **Summary:** Records a payment made directly to the water supplier. Any excess above the remaining water bill is added strictly to `room.water_credit_balance` and automatically deducts from future water bills only.
+- **Example (Overpaying Water Bill):**
+  - If Rent = `30,000.00`, Electricity = `10,000.00`, Water = `5,000.00` (`gross_total_fee = 45,000.00`), and customer pays `10,000.00` on the water bill:
+  - `excess_credit_added = 5000.00` goes to `room.water_credit_balance`.
+  - Current month `total_fee` remaining across all 3 recipients becomes `40,000.00` (`30,000` rent + `10,000` electricity + `0` water).
+  - Next month's `5,000.00` water bill is automatically paid from `room.water_credit_balance`, leaving `10,000.00` electricity and `30,000.00` rent unaffected.
 
-  {
-    "message": "Utility payment of 8000.00 recorded directly to utility supplier. Overpayment of 2000.00 credited to Room 101 (current utility credit balance: 2000.00).",
-    "payment": {
-      "id": 5,
-      "utility_record": 10,
-      "room_number": "101",
-      "billing_month": "2026-10-01",
-      "amount_paid": "8000.00",
-      "payment_date": "2026-10-20",
-      "paid_to_supplier": true,
-      "receipt_reference": "CEB-ONLINE-TXN-998822",
-      "notes": "Customer transferred 8000 to CEB account (includes 2000 advance payment)"
-    },
-    "utility_record": {
-      "id": 10,
-      "room": 1,
-      "room_number": "101",
-      "total_cost": "6000.00",
-      "total_utility_paid": "8000.00",
-      "remaining_balance": "0.00",
-      "room_credit_balance": "2000.00",
-      "is_paid": true
-    },
-    "amount_paid": "8000.00",
-    "excess_credit_added": "2000.00",
-    "room_utility_credit_balance": "2000.00",
-    "room_number": "101",
-    "paid_to_supplier": true
-  }
-  ```
+### 9.3 Manually Apply Advance Credit
+- **Electricity:** `POST /api/electricity/{id}/apply-credit/`
+- **Water:** `POST /api/water/{id}/apply-credit/`
 
-### 9.2 Manually Apply Advance Utility Credit to Unpaid Bill
-- **Endpoint:** `POST /api/utilities/{id}/apply-credit/`
-- **Summary:** Manually applies available room utility credit balance towards an unpaid utility record. If `amount` is omitted in the request body, automatically applies `min(room.utility_credit_balance, remaining_balance)`.
-- **Example Request:**
-  ```http
-  POST /api/utilities/11/apply-credit/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "amount": "1500.00"
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "message": "Successfully applied 1500.00 credit to Room 101 utility bill.",
-    "credit_applied": "1500.00",
-    "remaining_room_credit": "500.00",
-    "utility_record": {
-      "id": 11,
-      "room": 1,
-      "room_number": "101",
-      "total_cost": "1500.00",
-      "total_utility_paid": "1500.00",
-      "remaining_balance": "0.00",
-      "room_credit_balance": "500.00",
-      "is_paid": true
-    },
-    "payment": {
-      "id": 6,
-      "utility_record": 11,
-      "amount_paid": "1500.00",
-      "receipt_reference": "CREDIT-APPLIED",
-      "paid_to_supplier": true
-    }
-  }
-  ```
-
-### 9.3 List All Utility Payments to Suppliers
-- **Endpoint:** `GET /api/utility-payments/`
-- **Summary:** Retrieves all payments made to utility suppliers across all rooms. Supports query filters:
-  - `?room_id=<id>`: Filter by room.
-  - `?billing_month=YYYY-MM`: Filter by billing month.
-
-### 9.4 Create Utility Payment Record Directly
-- **Endpoint:** `POST /api/utility-payments/`
-- **Summary:** Creates a `UtilityPayment` record directly. If `amount_paid` exceeds the bill's remaining amount due, the excess is automatically deposited into `room.utility_credit_balance`.
-
-### 9.5 Building Utilities Overview
-- **Endpoint:** `GET /api/building-utilities/`
-- **Summary:** Lists all building-level monthly utility bills received from suppliers, including `supplier_electricity_units`, `supplier_water_units`, and discrepancies with room meter sums.
+### 9.4 Building Bills Overview
+- **Electricity:** `GET /api/building-electricity/`
+- **Water:** `GET /api/building-water/`
 
 ---
 
@@ -1745,13 +1225,7 @@ Utility payments and lease rent payments **must NEVER be mixed up**:
 
 ### 10.1 List Bills
 - **Endpoint:** `GET /api/bills/`
-- **Summary:** Retrieves all bills. Includes `net_rent` (`rent_fee - deposit_deducted`), rent, utilities, deposit deductions, and payment status.
-- **Example Request:**
-  ```http
-  GET /api/bills/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
+- **Summary:** Retrieves all monthly bills. `total_amount_due` represents the net room fee payable to the property manager (`rent_fee - deposit_deducted`). Each bill also surfaces the separate electricity and water obligations (`payable_to_electricity_supplier`, `payable_to_water_supplier`), `gross_total_fee`, and remaining `total_fee` across all three recipients.
 - **Example Response:**
   ```http
   HTTP/1.1 200 OK
@@ -1760,15 +1234,27 @@ Utility payments and lease rent payments **must NEVER be mixed up**:
   [
     {
       "id": 1,
-      "net_rent": "14000.00",
+      "net_rent": "30000.00",
+      "net_paid": "0.00",
+      "remaining_balance": "30000.00",
+      "payable_to_property_manager": "30000.00",
+      "electricity_paid": "0.00",
+      "electricity_remaining_balance": "10000.00",
+      "payable_to_electricity_supplier": "10000.00",
+      "water_paid": "5000.00",
+      "water_remaining_balance": "0.00",
+      "payable_to_water_supplier": "0.00",
+      "gross_total_fee": "45000.00",
+      "total_fee": "40000.00",
       "lease": 1,
       "billing_month": "2026-10-01",
-      "rent_fee": "15000.00",
-      "electricity_cost": "1500.00",
-      "water_cost": "500.00",
-      "deposit_deducted": "1000.00",
-      "deposit_remaining": "49000.00",
-      "total_amount_due": "16000.00",
+      "rent_fee": "30000.00",
+      "electricity_cost": "10000.00",
+      "water_cost": "5000.00",
+      "deposit_deducted": "0.00",
+      "deposit_remaining": "50000.00",
+      "total_amount_due": "30000.00",
+      "overpayment_credited": "0.00",
       "due_date": "2026-10-05",
       "is_paid": false,
       "created_at": "2026-10-01T06:00:00Z"
@@ -1778,275 +1264,26 @@ Utility payments and lease rent payments **must NEVER be mixed up**:
 
 ### 10.2 Create Manual Bill
 - **Endpoint:** `POST /api/bills/`
-- **Summary:** Manually creates a bill for a lease. Note: It is usually recommended to use `POST /api/bills/generate_monthly/` to auto-calculate and deduct deposit balances according to system rules.
-- **Example Request:**
-  ```http
-  POST /api/bills/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "lease": 1,
-    "billing_month": "2026-11-01",
-    "rent_fee": "15000.00",
-    "electricity_cost": "2000.00",
-    "water_cost": "600.00",
-    "deposit_deducted": "1000.00",
-    "deposit_remaining": "48000.00",
-    "total_amount_due": "16600.00",
-    "due_date": "2026-11-05",
-    "is_paid": false
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 201 Created
-  Content-Type: application/json
-
-  {
-    "id": 2,
-    "net_rent": "14000.00",
-    "lease": 1,
-    "billing_month": "2026-11-01",
-    "rent_fee": "15000.00",
-    "electricity_cost": "2000.00",
-    "water_cost": "600.00",
-    "deposit_deducted": "1000.00",
-    "deposit_remaining": "48000.00",
-    "total_amount_due": "16600.00",
-    "due_date": "2026-11-05",
-    "is_paid": false,
-    "created_at": "2026-10-11T14:45:00Z"
-  }
-  ```
+- **Summary:** Manually creates a bill for a lease. Usually use `POST /api/bills/generate_monthly/` instead.
 
 ### 10.3 Retrieve Bill Details
 - **Endpoint:** `GET /api/bills/{id}/`
 - **Summary:** Retrieves comprehensive bill details (using `BillDetailSerializer`). Automatically embeds:
   - `customer`: Full customer profile and contact numbers.
-  - `room`: Room configuration details.
-  - `previous_utilities`: Utility records from the previous 2 billing months for trend comparison.
-- **Example Request:**
-  ```http
-  GET /api/bills/1/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
+  - `room`: Room configuration details (including separate `electricity_credit_balance` and `water_credit_balance`).
+  - `previous_electricity_records`: `ElectricityRecord` entries from the previous 2 billing months.
+  - `previous_water_records`: `WaterRecord` entries from the previous 2 billing months.
 
-  {
-    "id": 1,
-    "customer": {
-      "id": 1,
-      "immediate_contacts": [
-        {
-          "id": 1,
-          "customer": 1,
-          "name": "Mary Doe",
-          "relation": "Mother",
-          "mobile_number": "0719876543",
-          "created_at": "2026-10-10T10:00:00Z"
-        }
-      ],
-      "first_name": "John",
-      "last_name": "Doe",
-      "email": "john.doe@example.com",
-      "phone": "0712345678",
-      "nic_number": "901234567V",
-      "address": "123 Main St, Colombo 01",
-      "created_at": "2026-10-10T09:50:00Z"
-    },
-    "room": {
-      "id": 1,
-      "room_number": "101",
-      "room_type": "single",
-      "note": "Ground floor single room",
-      "utility_credit_balance": "0.00",
-      "created_at": "2026-10-10T09:30:00Z"
-    },
-    "previous_utilities": [
-      {
-        "id": 10,
-        "electricity_unit_price": "50.00",
-        "water_unit_price": "25.00",
-        "total_cost": "1800.00",
-        "room": 1,
-        "billing_month": "2026-09-01",
-        "previous_electricity_meter_reading": "972.00",
-        "electricity_meter_reading": "1000.00",
-        "electricity_units": "28.00",
-        "previous_water_meter_reading": "484.00",
-        "water_meter_reading": "500.00",
-        "water_units": "16.00",
-        "electricity_cost": "1400.00",
-        "water_cost": "400.00",
-        "is_paid": true,
-        "due_date": "2026-09-25",
-        "created_at": "2026-09-05T08:00:00Z"
-      },
-      {
-        "id": 5,
-        "electricity_unit_price": "50.00",
-        "water_unit_price": "25.00",
-        "total_cost": "1950.00",
-        "room": 1,
-        "billing_month": "2026-08-01",
-        "previous_electricity_meter_reading": "942.00",
-        "electricity_meter_reading": "972.00",
-        "electricity_units": "30.00",
-        "previous_water_meter_reading": "466.00",
-        "water_meter_reading": "484.00",
-        "water_units": "18.00",
-        "electricity_cost": "1500.00",
-        "water_cost": "450.00",
-        "is_paid": true,
-        "due_date": "2026-08-25",
-        "created_at": "2026-08-05T08:00:00Z"
-      }
-    ],
-    "net_rent": "14000.00",
-    "lease": 1,
-    "billing_month": "2026-10-01",
-    "rent_fee": "15000.00",
-    "electricity_cost": "1500.00",
-    "water_cost": "500.00",
-    "deposit_deducted": "1000.00",
-    "deposit_remaining": "49000.00",
-    "total_amount_due": "16000.00",
-    "due_date": "2026-10-05",
-    "is_paid": false,
-    "created_at": "2026-10-01T06:00:00Z"
-  }
-  ```
+### 10.4 Update / Delete Bill
+- `PUT /api/bills/{id}/`, `PATCH /api/bills/{id}/`, `DELETE /api/bills/{id}/`.
 
-### 10.4 Update Bill (Full)
-- **Endpoint:** `PUT /api/bills/{id}/`
-- **Summary:** Completely updates an existing bill's fields.
-- **Example Request:**
-  ```http
-  PUT /api/bills/1/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "lease": 1,
-    "billing_month": "2026-10-01",
-    "rent_fee": "15000.00",
-    "electricity_cost": "1500.00",
-    "water_cost": "500.00",
-    "deposit_deducted": "1000.00",
-    "deposit_remaining": "49000.00",
-    "total_amount_due": "16000.00",
-    "due_date": "2026-10-10",
-    "is_paid": false
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "id": 1,
-    "net_rent": "14000.00",
-    "lease": 1,
-    "billing_month": "2026-10-01",
-    "rent_fee": "15000.00",
-    "electricity_cost": "1500.00",
-    "water_cost": "500.00",
-    "deposit_deducted": "1000.00",
-    "deposit_remaining": "49000.00",
-    "total_amount_due": "16000.00",
-    "due_date": "2026-10-10",
-    "is_paid": false,
-    "created_at": "2026-10-01T06:00:00Z"
-  }
-  ```
-
-### 10.5 Partial Update Bill
-- **Endpoint:** `PATCH /api/bills/{id}/`
-- **Summary:** Updates specific fields of a bill (e.g. extending the due date or toggling paid status).
-- **Example Request:**
-  ```http
-  PATCH /api/bills/1/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "due_date": "2026-10-15"
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "id": 1,
-    "net_rent": "14000.00",
-    "lease": 1,
-    "billing_month": "2026-10-01",
-    "rent_fee": "15000.00",
-    "electricity_cost": "1500.00",
-    "water_cost": "500.00",
-    "deposit_deducted": "1000.00",
-    "deposit_remaining": "49000.00",
-    "total_amount_due": "16000.00",
-    "due_date": "2026-10-15",
-    "is_paid": false,
-    "created_at": "2026-10-01T06:00:00Z"
-  }
-  ```
-
-### 10.6 Delete Bill
-- **Endpoint:** `DELETE /api/bills/{id}/`
-- **Summary:** Deletes a bill from the system.
-- **Example Request:**
-  ```http
-  DELETE /api/bills/2/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 204 No Content
-  ```
-
-### 10.7 Generate Monthly Bills (Batch)
-- **Endpoint:** `POST /api/bills/generate_monthly/`
-- **Summary:** Automatically generates consolidated monthly bills for all active leases for a specified month:
-  - Takes any date in the target month (normalizes to 1st of month).
-  - Skips leases that already have a bill generated for that month.
-  - Pulls electricity and water costs from the room's `UtilityRecord` for that month (defaults to 0.00 if missing).
-  - Deducts `monthly_deposit_deduction` from `lease.current_deposit_balance` (deduction stops completely when remaining deposit balance is at or below `lease.minimum_deposit_threshold`).
+### 10.5 Generate / Regenerate Monthly Bills (Batch)
+- **Endpoints:** `POST /api/bills/generate_monthly/` and `POST /api/bills/regenerate-monthly/`
+- **Summary:** Generates (or regenerates) monthly room-fee bills for all active leases:
+  - `total_amount_due` is set strictly to `lease.rent_fee - deposit_deducted` (room fee payable to the property manager).
+  - Pulls `electricity_cost` from `ElectricityRecord` and `water_cost` from `WaterRecord` for informational display and `gross_total_fee` / `total_fee` calculation.
+  - Automatically applies `lease.rent_credit_balance` strictly to the room fee.
   - Sets `due_date` automatically to the 5th of that month.
-- **Example Request:**
-  ```http
-  POST /api/bills/generate_monthly/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  Content-Type: application/json
-
-  {
-    "billing_month": "2026-11-01"
-  }
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "message": "Generated 2 bills.",
-    "bill_ids": [3, 4]
-  }
-  ```
 
 ---
 
@@ -2451,459 +1688,35 @@ Utility payments and lease rent payments **must NEVER be mixed up**:
 
 ### 13.1 Get Consolidated Notifications
 - **Endpoint:** `GET /api/notifications/`
-- **Summary:** Comprehensive operational dashboard action center providing 4 key operational sections and a top-level summary:
-  1. `payments_to_collect`: Unpaid/partially-paid bills sorted by overdue urgency, including customer contact numbers and immediate family/emergency contacts.
-  2. `repairs_to_do`: Uncompleted room repairs with elapsed days pending.
-  3. `utility_bills_to_pay`: Unpaid room utility records due to utility providers.
-  4. `missing_utility_records`: Active leases missing utility readings for the current calendar month.
+- **Summary:** Operational dashboard action center providing:
+  1. `payments_to_collect`: Unpaid/partially-paid room fee bills due to the property manager.
+  2. `repairs_to_do`: Uncompleted room repairs.
+  3. `electricity_bills_to_pay`: Unpaid `ElectricityRecord` bills due to electricity supplier.
+  4. `water_bills_to_pay`: Unpaid `WaterRecord` bills due to water supplier.
+  5. `missing_electricity_records` & `missing_water_records`: Active leases missing electricity or water readings for the current calendar month.
 - **Query Parameters:**
-  - `type` *(optional, string)*: Filter notifications by category. Valid values: `payments`, `repairs`, `utilities`. If omitted, returns all sections.
-- **Example Request:**
-  ```http
-  GET /api/notifications/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "summary": {
-      "total_action_items": 4,
-      "payments_to_collect_count": 1,
-      "overdue_payments_count": 1,
-      "total_payment_amount_to_collect": "6000.00",
-      "repairs_pending_count": 1,
-      "total_estimated_repair_cost": "1200.00",
-      "unpaid_utility_bills_count": 1,
-      "total_utility_bills_to_pay": "2000.00",
-      "missing_utility_records_count": 1
-    },
-    "payments_to_collect": [
-      {
-        "bill_id": 1,
-        "lease_id": 1,
-        "room_number": "101",
-        "customer_id": 1,
-        "customer_name": "John Doe",
-        "customer_phone": "0712345678",
-        "customer_email": "john.doe@example.com",
-        "immediate_contacts": [
-          {
-            "name": "Mary Doe",
-            "relation": "Mother",
-            "mobile_number": "0719876543"
-          }
-        ],
-        "billing_month": "2026-10-01",
-        "due_date": "2026-10-05",
-        "total_amount_due": "16000.00",
-        "paid_amount": "10000.00",
-        "outstanding_amount": "6000.00",
-        "is_overdue": true,
-        "days_overdue": 6,
-        "days_until_due": 0,
-        "status": "OVERDUE"
-      }
-    ],
-    "repairs_to_do": [
-      {
-        "repair_id": 1,
-        "lease_id": 1,
-        "room_number": "101",
-        "customer_name": "John Doe",
-        "customer_phone": "0712345678",
-        "description": "Fix leaking bathroom faucet",
-        "cost": "1200.00",
-        "status": "pending",
-        "date_logged": "2026-10-05",
-        "days_pending": 6
-      }
-    ],
-    "utility_bills_to_pay": [
-      {
-        "utility_record_id": 1,
-        "room_number": "101",
-        "billing_month": "2026-10-01",
-        "electricity_cost": "1500.00",
-        "water_cost": "500.00",
-        "total_cost": "2000.00",
-        "due_date": "2026-10-25",
-        "is_paid": false,
-        "is_overdue": false,
-        "days_overdue": 0
-      }
-    ],
-    "missing_utility_records": [
-      {
-        "room_number": "102",
-        "customer_name": "Jane Smith",
-        "billing_month": "2026-10-01",
-        "message": "Utility readings for Room 102 have not been recorded for 2026-10."
-      }
-    ]
-  }
-  ```
-
-### 13.2 Filter Notifications by Category
-- **Endpoint:** `GET /api/notifications/?type=payments` (or `?type=repairs`, `?type=utilities`)
-- **Summary:** Returns only the summary plus the requested action category array.
-- **Example Request:**
-  ```http
-  GET /api/notifications/?type=repairs HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "summary": {
-      "total_action_items": 4,
-      "payments_to_collect_count": 1,
-      "overdue_payments_count": 1,
-      "total_payment_amount_to_collect": "6000.00",
-      "repairs_pending_count": 1,
-      "total_estimated_repair_cost": "1200.00",
-      "unpaid_utility_bills_count": 1,
-      "total_utility_bills_to_pay": "2000.00",
-      "missing_utility_records_count": 1
-    },
-    "repairs_to_do": [
-      {
-        "repair_id": 1,
-        "lease_id": 1,
-        "room_number": "101",
-        "customer_name": "John Doe",
-        "customer_phone": "0712345678",
-        "description": "Fix leaking bathroom faucet",
-        "cost": "1200.00",
-        "status": "pending",
-        "date_logged": "2026-10-05",
-        "days_pending": 6
-      }
-    ]
-  }
-  ```
+  - `type` *(optional, string)*: Filter notifications by `payments`, `repairs`, `electricity`, or `water`.
 
 ---
 
 ## 14. Reports API
 
-All reporting endpoints accept optional `start_date` and `end_date` parameters formatted as `YYYY-MM-DD`. If omitted, default date range spans from the 1st day of the current calendar month to the current date.
-
-### 14.1 Room Data Report
-- **Endpoint:** `GET /api/reports/room-data/`
-- **Summary:** Generates an overview of all rooms (`room_number`, `room_type`, `note`, and `utility_credit_balance`).
-- **Example Request:**
-  ```http
-  GET /api/reports/room-data/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "id": 1,
-      "room_number": "101",
-      "room_type": "single",
-      "note": "Ground floor single room",
-      "utility_credit_balance": "0.00",
-      "created_at": "2026-10-10T09:30:00Z"
-    },
-    {
-      "id": 2,
-      "room_number": "102",
-      "room_type": "double",
-      "note": "First floor double room",
-      "utility_credit_balance": "500.00",
-      "created_at": "2026-10-10T09:35:00Z"
-    }
-  ]
-  ```
-
-### 14.2 Customer Details Report
-- **Endpoint:** `GET /api/reports/customer-details/`
-- **Summary:** Generates a comprehensive customer report including profile data, assigned rooms, room type (`single`, `double`, `annex`), lease baseline rent & deposit, monthly deposit deduction, minimum deposit threshold, deposit paid, current remaining deposit, and total payments made.
-- **Example Request:**
-  ```http
-  GET /api/reports/customer-details/ HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "customer": {
-        "id": 1,
-        "immediate_contacts": [
-          {
-            "id": 1,
-            "customer": 1,
-            "name": "Mary Doe",
-            "relation": "Mother",
-            "mobile_number": "0719876543",
-            "created_at": "2026-10-10T10:00:00Z"
-          }
-        ],
-        "first_name": "Kasun",
-        "last_name": "Perera",
-        "email": "kasun.p@example.com",
-        "phone": "0712345678",
-        "nic_number": "901234567V",
-        "address": "123 Main St, Colombo 01",
-        "created_at": "2026-10-10T09:50:00Z"
-      },
-      "leases": [
-        {
-          "lease_id": 1,
-          "room": "101",
-          "room_type": "single",
-          "base_rent_fee": "15000.00",
-          "base_deposit": "50000.00",
-          "monthly_deposit_deduction": "1000.00",
-          "minimum_deposit_threshold": "10000.00",
-          "deposit_paid": "50000.00",
-          "current_deposit": "49000.00",
-          "total_payments": 30000.00
-        }
-      ]
-    }
-  ]
-  ```
-
-### 14.3 Customer Payments Report
-- **Endpoint:** `GET /api/reports/customer-payments/`
-- **Summary:** Retrieves all accommodation rent payments made by a specific customer within a date range. `customer_id` query parameter is required.
-- **Query Parameters:**
-  - `customer_id` *(required, integer)*: Target customer ID.
-  - `start_date` *(optional, string YYYY-MM-DD)*: Filter start date.
-  - `end_date` *(optional, string YYYY-MM-DD)*: Filter end date.
-- **Example Request:**
-  ```http
-  GET /api/reports/customer-payments/?customer_id=1&start_date=2026-10-01&end_date=2026-10-31 HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "id": 1,
-      "bill": 1,
-      "amount_paid": "10000.00",
-      "payment_date": "2026-10-10",
-      "created_at": "2026-10-10T11:00:00Z"
-    }
-  ]
-  ```
-
-### 14.4 All Payments Report
-- **Endpoint:** `GET /api/reports/all-payments/`
-- **Summary:** Lists all payment transactions received across all rooms and customers within the given date range.
-- **Query Parameters:**
-  - `start_date` *(optional, string YYYY-MM-DD)*: Defaults to 1st of current month.
-  - `end_date` *(optional, string YYYY-MM-DD)*: Defaults to current date.
-- **Example Request:**
-  ```http
-  GET /api/reports/all-payments/?start_date=2026-10-01&end_date=2026-10-31 HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "payment_id": 1,
-      "amount": "10000.00",
-      "date": "2026-10-10",
-      "customer": "John",
-      "room": "101"
-    }
-  ]
-  ```
-
-### 14.5 This Month Charges Report
-- **Endpoint:** `GET /api/reports/this-month-charges/`
-- **Summary:** Retrieves all bills whose `billing_month` falls within the specified date interval.
-- **Query Parameters:**
-  - `start_date` *(optional, string YYYY-MM-DD)*
-  - `end_date` *(optional, string YYYY-MM-DD)*
-- **Example Request:**
-  ```http
-  GET /api/reports/this-month-charges/?start_date=2026-10-01&end_date=2026-10-31 HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "id": 1,
-      "net_rent": "14000.00",
-      "lease": 1,
-      "billing_month": "2026-10-01",
-      "rent_fee": "15000.00",
-      "electricity_cost": "1500.00",
-      "water_cost": "500.00",
-      "deposit_deducted": "1000.00",
-      "deposit_remaining": "49000.00",
-      "total_amount_due": "16000.00",
-      "due_date": "2026-10-05",
-      "is_paid": false,
-      "created_at": "2026-10-01T06:00:00Z"
-    }
-  ]
-  ```
-
-### 14.6 Room Repairs Report
-- **Endpoint:** `GET /api/reports/room-repairs/`
-- **Summary:** Lists all room repairs logged within the specified date range, with costs and room identifiers.
-- **Query Parameters:**
-  - `start_date` *(optional, string YYYY-MM-DD)*
-  - `end_date` *(optional, string YYYY-MM-DD)*
-- **Example Request:**
-  ```http
-  GET /api/reports/room-repairs/?start_date=2026-10-01&end_date=2026-10-31 HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  [
-    {
-      "repair_id": 1,
-      "room": "101",
-      "cost": "1200.00",
-      "date": "2026-10-05",
-      "description": "Fix leaking bathroom faucet"
-    }
-  ]
-  ```
-
-### 14.7 Profits Report (Excludes Utility Payments)
-- **Endpoint:** `GET /api/reports/profits/`
-- **Summary:** Calculates net operating profit across the accommodation business for the given date range:
-  - `total_revenue`: Sum of all lease rent payments collected (`lease_revenue`).
-  - `total_expenses`: Sum of all maintenance and repair costs (`total_repair_costs`).
-  - `net_profit`: `total_revenue - total_expenses`.
-  - `utility_payments_to_suppliers_excluded`: Displays utility payments paid to suppliers for audit transparency, verifying they are strictly excluded from business income.
-  - `room_profits`: Net profit breakdown by room.
-- **Query Parameters:**
-  - `start_date` *(optional, string YYYY-MM-DD)*
-  - `end_date` *(optional, string YYYY-MM-DD)*
-- **Example Request:**
-  ```http
-  GET /api/reports/profits/?start_date=2026-10-01&end_date=2026-10-31 HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "period": {
-      "start": "2026-10-01",
-      "end": "2026-10-31"
-    },
-    "total_revenue": "45000.00",
-    "lease_revenue": "45000.00",
-    "total_expenses": "3500.00",
-    "total_repair_costs": "3500.00",
-    "total_profit": "41500.00",
-    "net_profit": "41500.00",
-    "utility_payments_to_suppliers_excluded": "18000.00",
-    "room_profits": {
-      "101": 21500.0,
-      "102": 20000.0
-    },
-    "note": "Utility bills are paid by customers to utility suppliers directly and are not recorded as accommodation income."
-  }
-  ```
-
-### 14.8 Utility Payments to Suppliers Report
-- **Endpoint:** `GET /api/reports/utility-payments/`
-- **Summary:** Dedicated financial report listing all utility payments made directly to utility suppliers (CEB, Water Board) within the selected date range. Shows room breakdowns, supplier receipt references, total amounts paid, and currently unpaid utility records.
-- **Query Parameters:**
-  - `start_date` *(optional, string YYYY-MM-DD)*: Start of date filter.
-  - `end_date` *(optional, string YYYY-MM-DD)*: End of date filter.
-- **Example Request:**
-  ```http
-  GET /api/reports/utility-payments/?start_date=2026-10-01&end_date=2026-10-31 HTTP/1.1
-  Host: thiranda-813344430767.asia-southeast1.run.app
-  Authorization: Bearer <jwt_token>
-  ```
-- **Example Response:**
-  ```http
-  HTTP/1.1 200 OK
-  Content-Type: application/json
-
-  {
-    "period": {
-      "start": "2026-10-01",
-      "end": "2026-10-31"
-    },
-    "total_paid_to_suppliers": "18000.00",
-    "total_utility_payments_to_suppliers": "18000.00",
-    "payments_count": 2,
-    "room_breakdown": {
-      "101": 10800.0,
-      "102": 7200.0
-    },
-    "payments": [
-      {
-        "payment_id": 1,
-        "utility_record_id": 10,
-        "room_number": "101",
-        "room_type": "single",
-        "customer_name": "Kasun Perera",
-        "billing_month": "2026-10-01",
-        "amount_paid": "10800.00",
-        "payment_date": "2026-10-20",
-        "paid_to_supplier": true,
-        "receipt_reference": "CEB-REC-202610-8844",
-        "notes": "Paid directly at CEB bill counter"
-      }
-    ],
-    "unpaid_utility_records": [
-      {
-        "utility_record_id": 12,
-        "room_number": "A201",
-        "room_type": "annex",
-        "billing_month": "2026-10-01",
-        "total_cost": "10800.00",
-        "due_date": "2026-10-28"
-      }
-    ],
-    "note": "Utility bills are paid directly to the utility supplier by customers and are not recorded as accommodation income."
-  }
-  ```
+All reporting endpoints accept optional `start_date` and `end_date` (`YYYY-MM-DD`) or `month` (`YYYY-MM`). See [REPORT_API_DOCUMENTATION.md](REPORT_API_DOCUMENTATION.md) for full details on:
+- `GET /api/reports/room-data/`
+- `GET /api/reports/customer-details/`
+- `GET /api/reports/customer-room-fee-payments/?customer_id=<id>`
+- `GET /api/reports/customer-electricity-payments/?customer_id=<id>`
+- `GET /api/reports/customer-water-payments/?customer_id=<id>`
+- `GET /api/reports/all-room-fee-payments/`
+- `GET /api/reports/all-electricity-payments/`
+- `GET /api/reports/all-water-payments/`
+- `GET /api/reports/electricity-payments/`
+- `GET /api/reports/water-payments/`
+- `GET /api/reports/unpaid-room-fee-bills/`
+- `GET /api/reports/unpaid-electricity-bills/`
+- `GET /api/reports/unpaid-water-bills/`
+- `GET /api/reports/profits/` (excludes both `electricity_payments_to_supplier_excluded` and `water_payments_to_supplier_excluded` from accommodation revenue)
+- `GET /api/reports/recorrection-logs/`
 
 ---
 
@@ -2911,25 +1724,18 @@ All reporting endpoints accept optional `start_date` and `end_date` parameters f
 
 ### Room Fee Bill Regeneration
 - **Endpoint:** `POST /api/bills/regenerate-monthly/` (or `POST /api/bills/generate_monthly/` with `"regenerate": true`)
-- **Payload:**
-  ```json
-  {
-    "billing_month": "2026-07-01",
-    "reason": "Rent adjustment applied"
-  }
-  ```
-- **Behavior:** Restores prior `deposit_deducted` to `lease.current_deposit_balance` before recomputing deposit deduction, updates the `Bill` amounts, and reconciles existing `Payment`s + `Lease.rent_credit_balance` (strictly separate from utility payments/credit).
+- **Behavior:** Restores prior `deposit_deducted` to `lease.current_deposit_balance` before recomputing deposit deduction, updates `Bill.total_amount_due` (room fee due to property manager), and reconciles existing `Payment`s + `Lease.rent_credit_balance`.
 
-### Utility Bill Regeneration
-- **Endpoints:** `POST /api/utilities/building-bill/`, `POST /api/building-utilities/`, `POST /api/utilities/set-unit-prices/`, `POST /api/utilities/<id>/set-unit-prices/`
-- **Optional Field:** `"reason": "..."`
-- **Behavior:** Updates `UtilityRecord` amounts and reconciles existing `UtilityPayment`s + `Room.utility_credit_balance`. If `net_paid > new_total_cost`, the excess is returned to `Room.utility_credit_balance` and `is_paid` becomes `true`.
+### Electricity & Water Bill Regeneration (Separate)
+- **Electricity Endpoints:** `POST /api/electricity/building-bill/`, `POST /api/building-electricity/`, `POST /api/electricity/set-unit-prices/`, `POST /api/electricity/<id>/set-unit-prices/`
+- **Water Endpoints:** `POST /api/water/building-bill/`, `POST /api/building-water/`, `POST /api/water/set-unit-prices/`, `POST /api/water/<id>/set-unit-prices/`
+- **Behavior:** Updates `ElectricityRecord` or `WaterRecord` amounts independently and reconciles existing `ElectricityPayment`s + `Room.electricity_credit_balance` or `WaterPayment`s + `Room.water_credit_balance` separately.
 
 ### Recorrection Audit Log Endpoints
-- `GET /api/recorrection-logs/` (supports `?bill_category=utility|room_fee&customer_id=&room_id=&billing_month=YYYY-MM`)
+- `GET /api/recorrection-logs/` (supports `?bill_category=electricity|water|room_fee&customer_id=&room_id=&billing_month=YYYY-MM`)
 - `GET /api/reports/recorrection-logs/`
 
-> **Full Report API Documentation:** See [REPORT_API_DOCUMENTATION.md](REPORT_API_DOCUMENTATION.md) for all report endpoints (`customer-room-fee-payments`, `customer-utility-payments`, `all-room-fee-payments`, `all-utility-payments`, `unpaid-utility-bills`, `unpaid-room-fee-bills`, `recorrection-logs`, and legacy reports).
+> **Full Report API Documentation:** See [REPORT_API_DOCUMENTATION.md](REPORT_API_DOCUMENTATION.md).
 
 ---
 

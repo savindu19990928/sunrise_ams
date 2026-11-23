@@ -1,6 +1,6 @@
 import type { ID } from './index';
 
-export type ReminderType = 'payments' | 'repairs' | 'utilities';
+export type ReminderType = 'payments' | 'repairs' | 'electricity' | 'water';
 
 export interface ReminderContact {
   name: string;
@@ -41,20 +41,44 @@ export interface RepairReminder {
   days_pending: number;
 }
 
-export interface UtilityBillReminder {
-  utility_record_id: ID;
+export interface ElectricityBillReminder {
+  id?: ID;
+  electricity_record_id?: ID;
+  room_id?: ID;
   room_number: string;
+  customer_name?: string | null;
   billing_month: string;
-  electricity_cost: string | number;
-  water_cost: string | number;
-  total_cost: string | number;
+  electricity_cost?: string | number;
+  total_cost?: string | number;
+  already_paid?: string | number;
+  remaining_balance?: string | number;
+  outstanding_amount?: string | number;
   due_date?: string | null;
-  is_paid: boolean;
-  is_overdue: boolean;
-  days_overdue: number;
+  is_paid?: boolean;
+  is_overdue?: boolean;
+  days_overdue?: number;
 }
 
-export interface MissingUtilityReminder {
+export interface WaterBillReminder {
+  id?: ID;
+  water_record_id?: ID;
+  room_id?: ID;
+  room_number: string;
+  customer_name?: string | null;
+  billing_month: string;
+  water_cost?: string | number;
+  total_cost?: string | number;
+  already_paid?: string | number;
+  remaining_balance?: string | number;
+  outstanding_amount?: string | number;
+  due_date?: string | null;
+  is_paid?: boolean;
+  is_overdue?: boolean;
+  days_overdue?: number;
+}
+
+export interface MissingServiceReminder {
+  room_id?: ID;
   room_number: string;
   customer_name?: string | null;
   billing_month: string;
@@ -68,15 +92,20 @@ export interface NotificationSummary {
   total_payment_amount_to_collect: string | number;
   repairs_pending_count: number;
   total_estimated_repair_cost: string | number;
-  unpaid_utility_bills_count: number;
-  total_utility_bills_to_pay: string | number;
-  missing_utility_records_count: number;
+  unpaid_electricity_bills_count?: number;
+  total_electricity_bills_to_pay?: string | number;
+  missing_electricity_records_count?: number;
+  unpaid_water_bills_count?: number;
+  total_water_bills_to_pay?: string | number;
+  missing_water_records_count?: number;
 }
 
 export interface NotificationsResponse {
   summary: NotificationSummary;
   payments_to_collect?: PaymentReminder[];
   repairs_to_do?: RepairReminder[];
-  utility_bills_to_pay?: UtilityBillReminder[];
-  missing_utility_records?: MissingUtilityReminder[];
+  electricity_bills_to_pay?: ElectricityBillReminder[];
+  water_bills_to_pay?: WaterBillReminder[];
+  missing_electricity_records?: MissingServiceReminder[];
+  missing_water_records?: MissingServiceReminder[];
 }
