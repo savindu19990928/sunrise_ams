@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { BanknoteIcon } from 'lucide-react';
-import type { NormalizedServicePayment, NormalizedServiceRow, Room, ServiceKind } from '../../types';
+import type { NormalizedServicePayment, NormalizedServiceRow, Room, ServiceKind, ServicePaymentResponse } from '../../types';
 import { useAction } from '../../hooks/useAction';
 import { useCollection } from '../../hooks/useResource';
 import { formatCurrency, formatDate, formatMonth, monthInputValue, toNumber } from '../../utils/format';
 import { mapById } from '../../utils/lookup';
 import { notifyRemindersChanged } from '../../utils/reminders';
 import {
+  formatServicePaymentToast,
   isAdvanceCreditReference,
   normalizeBuildingBill,
   normalizeServicePayment,
@@ -238,19 +239,24 @@ export function ServicePaymentsView({ kind }: ServicePaymentsViewProps) {
         row={null}
         open={modalOpen}
         records={records}
+        rooms={rooms}
         pending={paymentAction.pending}
         error={paymentAction.error}
         onClose={() => {
           setModalOpen(false);
           paymentAction.setError(null);
         }}
-        onSubmit={async (selectedRow, payload, excess) => {
-          const result = await paymentAction.run(
-            config.recordPaymentPath(selectedRow.record_id),
+        onSubmit={async (target, payload, excess) => {
+          const path = target.roomId
+            ? config.recordRoomPaymentPath
+            : target.recordId
+              ? config.recordPaymentPath(target.recordId)
+              : null;
+          if (!path) return;
+          const result = await paymentAction.run<ServicePaymentResponse>(
+            path,
             payload,
-            excess > 0
-              ? `${config.label} payment recorded to ${config.supplierShort}. ${formatCurrency(excess)} kept as advance ${config.lowerLabel} credit for Room ${selectedRow.room_number}.`
-              : `${config.label} payment recorded to ${config.supplierShort} for Room ${selectedRow.room_number}.`
+            (res) => formatServicePaymentToast(kind, target.roomNumber, res, excess)
           );
           if (!result) return;
           setModalOpen(false);

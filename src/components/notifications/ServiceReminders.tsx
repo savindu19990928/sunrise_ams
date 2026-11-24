@@ -93,11 +93,9 @@ export function ServiceReminders({ kind, bills, missing }: ServiceRemindersProps
                         <p className="font-medium text-ink">Room {item.room_number}</p>
                         {item.customer_name && <span className="text-[13px] text-ink-muted">{item.customer_name}</span>}
                         <span className="text-[13px] text-ink-muted">{formatMonth(item.billing_month)}</span>
-                        {item.is_overdue ? (
-                          <Badge tone="danger">{item.days_overdue ?? 0} days overdue</Badge>
-                        ) : (
-                          <Badge tone="neutral">Due {formatDate(item.due_date)}</Badge>
-                        )}
+                        <Badge tone="neutral">
+                          {item.billing_date ? `Billed ${formatDate(item.billing_date)}` : 'Unpaid'}
+                        </Badge>
                       </div>
                       <p className="mt-1 text-[13px] text-ink-muted">
                         Billed {formatCurrency(billedCost)} · Pay directly to {config.supplierShort}
@@ -105,7 +103,7 @@ export function ServiceReminders({ kind, bills, missing }: ServiceRemindersProps
                     </div>
 
                     <div className="flex items-center justify-between gap-4 md:justify-end">
-                      <p className={`text-[15px] font-semibold ${item.is_overdue ? 'text-danger-600' : 'text-ink'}`}>
+                      <p className="text-[15px] font-semibold text-ink">
                         {formatCurrency(remaining)}
                       </p>
                       <Link

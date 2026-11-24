@@ -1,8 +1,10 @@
 import type { jsPDF } from 'jspdf';
-import type { Bill, Customer, ElectricityRecord, ID, Lease, Room, WaterRecord } from '../types';
+import type { Bill, Customer, ElectricityRecord, ID, Lease, LeaveRoomResult, Room, WaterRecord } from '../types';
 import { formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from './format';
 import {
+  billDueDate,
   billElectricityRemaining,
+  billOutstanding,
   billRentDue,
   billStatus,
   billWaterRemaining,
@@ -134,6 +136,19 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
   const depositDeduction = toNumber(bill.deposit_deduction);
   const remainingDeposit = toNumber(bill.remaining_deposit);
   const depositPaid = lease ? toNumber(lease.deposit_paid) : null;
+  const dueDateValue = billDueDate(bill);
+  const leaseStart = bill.lease_start_date ?? lease?.start_date;
+  const leaseEnd = bill.lease_end_date ?? lease?.end_date;
+  const expectedEndRefund =
+    bill.deposit_refund_at_end_date !== undefined && bill.deposit_refund_at_end_date !== null
+      ? toNumber(bill.deposit_refund_at_end_date)
+      : lease?.expected_deposit_refund_at_end_date !== undefined && lease?.expected_deposit_refund_at_end_date !== null
+        ? toNumber(lease.expected_deposit_refund_at_end_date)
+        : remainingDeposit;
+  const moveOutRepairs = toNumber(bill.move_out_repair_cost);
+  const regularRepairs = toNumber(bill.regular_room_repair_cost);
+  const totalRoomRepairs = toNumber(bill.room_repair_cost);
+  const hasClosingRepairs = moveOutRepairs > 0 || regularRepairs > 0 || totalRoomRepairs > 0;
   const supplierAccounts = getSupplierAccounts();
   const current = history.find((row) => row.isCurrent);
   const electricityRate = current?.electricityRate ?? 0;
@@ -162,9 +177,16 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
       },
       { label: 'Room', value: roomNumber, note: room?.room_type || undefined },
       { label: 'Billing month', value: monthLabel(monthInputValue(bill.billing_month)) },
-      { label: 'Payment due', value: formatDate(bill.due_date) },
+      {
+        label: 'Room payment due',
+        value: formatDate(dueDateValue),
+        note: bill.is_overdue && billOutstanding(bill) > 0 ? `${bill.days_overdue ?? 0} days overdue` : undefined
+      },
       { label: 'Status', value: titleCase(billStatus(bill)) },
-      { label: 'Lease started', value: lease ? formatDate(lease.start_date) : '—' }
+      {
+        label: 'Lease period',
+        value: leaseStart ? `${formatDate(leaseStart)} to ${leaseEnd ? formatDate(leaseEnd) : '—'}` : '—'
+      }
     ],
     3
   );
@@ -212,8 +234,8 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
         formatCurrency(billWaterRemaining(bill))
       ]
     ],
-    rightAlign: [2, 3],
-    columnWidths: { 1: 125, 2: 85, 3: 85 },
+    rightAlign: [1, 2],
+    columnWidths: { 1: 85, 2: 85 },
     fontSize: 8.4
   });
 
@@ -224,13 +246,31 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
     body: [
       ['Deposit originally paid', depositPaid === null ? '—' : formatCurrency(depositPaid)],
       ['Deducted this month', `- ${formatCurrency(depositDeduction)}`],
-      ['Remaining deposit balance', formatCurrency(remainingDeposit)]
+      ['Remaining deposit balance', formatCurrency(remainingDeposit)],
+      ['Expected deposit refund at lease end', formatCurrency(expectedEndRefund)]
     ],
     rightAlign: [1],
     columnWidths: { 1: 130 },
     emphasiseLastRow: true,
     fontSize: 8.6
   });
+
+  if (hasClosingRepairs) {
+    y = drawSectionTitle(doc, y + 16, 'Room repairs', 'Deducted at lease end / termination');
+    y = drawTable(doc, {
+      startY: y + 4,
+      head: ['Repair category', 'Amount'],
+      body: [
+        ['Move-out special repairs', formatCurrency(moveOutRepairs)],
+        ['Regular tenancy repairs', formatCurrency(regularRepairs)],
+        ['Total room repair cost', formatCurrency(totalRoomRepairs || moveOutRepairs + regularRepairs)]
+      ],
+      rightAlign: [1],
+      columnWidths: { 1: 130 },
+      emphasiseLastRow: true,
+      fontSize: 8.6
+    });
+  }
 
   y = drawSectionTitle(doc, y + 16, 'Electricity & water history', ' ');
   y = drawTable(doc, {
@@ -313,4 +353,178 @@ export function downloadBillsPdf(bundles: BillPdfBundle[], monthKey: string): vo
   });
   stampFooters(doc, `${BRAND_NAME} — bills for ${monthLabel(monthKey)} · ${bundles.length} tenants`);
   savePdf(doc, `${slugify(`${BRAND_NAME} bills`)}-${monthKey}.pdf`);
+}
+
+function buildClosingBillDocument(result: LeaveRoomResult): jsPDF {
+  const billData = result.bill_data;
+  const leaseId = result.lease_id ?? billData?.lease_id ?? '—';
+  const roomNumber = result.room_number ?? '—';
+  const customerNameText = result.customer_name ?? `Lease #${leaseId}`;
+  const terminationType = billData?.termination_type ?? result.termination_type ?? 'terminated';
+  const endDate = billData?.lease_end_date ?? result.lease_end_date;
+  const startDate = billData?.lease_start_date;
+
+  const depositBefore = toNumber(billData?.deposit_before_repairs ?? result.deposit_before_repairs);
+  const moveOutCost = toNumber(billData?.move_out_repair_cost ?? result.move_out_repair_cost);
+  const regularCost = toNumber(billData?.regular_room_repair_cost ?? result.regular_room_repair_cost);
+  const totalRepairs = toNumber(
+    billData?.total_repairs_deducted ?? billData?.room_repair_cost ?? result.total_repairs_deducted
+  );
+  const finalRefund = toNumber(
+    billData?.final_deposit_refund ?? billData?.deposit_refund ?? result.final_deposit_refund
+  );
+  const owedByCustomer = toNumber(billData?.amount_owed_by_customer ?? result.amount_owed_by_customer);
+
+  const payableManager = toNumber(billData?.payable_to_property_manager);
+  const payableElec = toNumber(billData?.payable_to_electricity_supplier);
+  const payableWater = toNumber(billData?.payable_to_water_supplier);
+  const totalOutstanding = toNumber(
+    billData?.total_outstanding_fee ?? payableManager + payableElec + payableWater
+  );
+
+  const supplierAccounts = getSupplierAccounts();
+  const doc = createDocument('portrait', BILL_THEME);
+
+  let y = drawBrandHeader(doc, {
+    documentTitle: terminationType === 'end_date_reached' ? 'Lease end closing bill' : 'Lease termination closing bill',
+    reference: `Lease #${leaseId}`,
+    referenceNote: `Issued ${formatDate(new Date().toISOString())}`
+  });
+
+  y = drawFieldGrid(
+    doc,
+    y,
+    [
+      { label: 'Billed to', value: customerNameText },
+      { label: 'Room', value: roomNumber },
+      {
+        label: 'Settlement type',
+        value: terminationType === 'end_date_reached' ? 'End date reached' : 'Early termination'
+      },
+      {
+        label: 'Lease period',
+        value: startDate
+          ? `${formatDate(startDate)} to ${endDate ? formatDate(endDate) : '—'}`
+          : endDate
+            ? `Ended ${formatDate(endDate)}`
+            : '—'
+      }
+    ],
+    2
+  );
+
+  y += 4;
+  y = drawSectionTitle(doc, y, 'Deposit & room repairs settlement', ' ');
+  const settlementRows: (string | number)[][] = [
+    ['Deposit balance before repairs', formatCurrency(depositBefore)],
+    ['Move-out special room repairs', `- ${formatCurrency(moveOutCost)}`],
+    ['Regular tenancy repairs', `- ${formatCurrency(regularCost)}`],
+    ['Total repairs deducted', `- ${formatCurrency(totalRepairs)}`]
+  ];
+  if (owedByCustomer > 0) {
+    settlementRows.push(['Balance owed by customer for repairs', formatCurrency(owedByCustomer)]);
+  }
+  settlementRows.push(['Final deposit refund', formatCurrency(finalRefund)]);
+
+  y = drawTable(doc, {
+    startY: y + 4,
+    head: ['Item', 'Amount'],
+    body: settlementRows,
+    rightAlign: [1],
+    columnWidths: { 1: 140 },
+    emphasiseLastRow: true
+  });
+
+  y = drawTotalBand(
+    doc,
+    y + 10,
+    owedByCustomer > 0 ? 'Repair shortfall owed by customer' : 'Final deposit refund',
+    formatCurrency(owedByCustomer > 0 ? owedByCustomer : finalRefund)
+  );
+
+  const repairRows: string[][] = [];
+  if (result.move_out_repairs?.length || result.regular_room_repairs?.length) {
+    for (const item of result.move_out_repairs ?? []) {
+      repairRows.push([
+        'Move-out special',
+        item.description || 'Move-out repair',
+        item.date_recorded ? formatDate(item.date_recorded) : '—',
+        formatCurrency(item.cost)
+      ]);
+    }
+    for (const item of result.regular_room_repairs ?? []) {
+      repairRows.push([
+        'Regular repair',
+        item.description || 'Room repair',
+        item.date_logged ? formatDate(item.date_logged) : '—',
+        formatCurrency(item.cost)
+      ]);
+    }
+  } else {
+    for (const item of result.deducted_repairs ?? []) {
+      repairRows.push([
+        item.repair_category === 'move_out_repair' ? 'Move-out special' : 'Regular repair',
+        item.description || 'Repair',
+        item.date_recorded || item.date_logged ? formatDate(item.date_recorded ?? item.date_logged) : '—',
+        formatCurrency(item.cost)
+      ]);
+    }
+  }
+
+  if (repairRows.length > 0) {
+    y = drawSectionTitle(doc, y + 16, 'Deducted repairs itemization', ' ');
+    y = drawTable(doc, {
+      startY: y + 4,
+      head: ['Category', 'Description', 'Date', 'Cost'],
+      body: repairRows,
+      rightAlign: [3],
+      columnWidths: { 0: 95, 2: 75, 3: 85 },
+      fontSize: 8.4
+    });
+  }
+
+  y = drawSectionTitle(
+    doc,
+    y + 16,
+    'Outstanding balances across recipients',
+    'Rent goes to property manager; electricity & water go directly to suppliers'
+  );
+  y = drawTable(doc, {
+    startY: y + 4,
+    head: ['Recipient', 'Outstanding'],
+    body: [
+      ['Property manager (room rent)', formatCurrency(payableManager)],
+      ['Electricity supplier (LECO)', formatCurrency(payableElec)],
+      ['Water supplier (NWSDB)', formatCurrency(payableWater)],
+      ['Total outstanding across all 3 recipients', formatCurrency(totalOutstanding)]
+    ],
+    rightAlign: [1],
+    columnWidths: { 1: 140 },
+    emphasiseLastRow: true,
+    fontSize: 8.6
+  });
+
+  drawSupplierAccountsBox(doc, y + 14, [
+    { label: 'LECO AC No.', value: supplierAccounts.electricityAccount || '—' },
+    { label: 'NWSDB AC No.', value: supplierAccounts.waterAccount || '—' }
+  ]);
+
+  stampFooters(doc, `${BRAND_NAME} — closing bill · Lease #${leaseId} · Room ${roomNumber}`);
+  return doc;
+}
+
+export function downloadClosingBillPdf(result: LeaveRoomResult): void {
+  const leaseId = result.lease_id ?? result.bill_data?.lease_id ?? 'closing';
+  const name = result.customer_name ?? `lease-${leaseId}`;
+  savePdf(buildClosingBillDocument(result), slugify(`${BRAND_NAME} closing bill ${leaseId} ${name}`));
+}
+
+export function previewClosingBillPdf(result: LeaveRoomResult): void {
+  const leaseId = result.lease_id ?? result.bill_data?.lease_id ?? '';
+  previewPdf(buildClosingBillDocument(result), `${BRAND_NAME} — Closing Bill #${leaseId}`);
+}
+
+export function printClosingBillPdf(result: LeaveRoomResult): void {
+  const leaseId = result.lease_id ?? result.bill_data?.lease_id ?? '';
+  printPdf(buildClosingBillDocument(result), `${BRAND_NAME} — Closing Bill #${leaseId}`);
 }

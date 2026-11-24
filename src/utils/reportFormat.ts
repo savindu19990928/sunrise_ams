@@ -7,34 +7,36 @@ import { formatCurrency, formatDate, titleCase } from './format';
  */
 
 const currencyKeys = [
-'cost',
-'amount',
-'rent',
-'profit',
-'total',
-'deposit',
-'payments',
-'owed',
-'water',
-'electricity',
-'fee',
-'deduction',
-'revenue',
-'charge',
-'balance',
-'due',
-'paid',
-'price',
-'adjustment',
-'difference'];
+  'cost',
+  'amount',
+  'rent',
+  'profit',
+  'total',
+  'deposit',
+  'refund',
+  'credit',
+  'payments',
+  'owed',
+  'water',
+  'electricity',
+  'fee',
+  'deduction',
+  'revenue',
+  'charge',
+  'balance',
+  'due',
+  'paid',
+  'price',
+  'adjustment',
+  'difference'];
 
 
 const dateKeys = ['date', 'month', 'period', 'created_at'];
 
 export function isCurrencyKey(key: string): boolean {
   const lower = key.toLowerCase();
-  // Usage columns (units, per-day averages), meter readings, and counts are quantities, not money.
-  if (/units|per_day|count|_id$|reading/.test(lower)) return false;
+  // Usage columns (units, per-day averages), meter readings, days/months, and counts are quantities, not money.
+  if (/units|per_day|count|_id$|reading|days|months/.test(lower)) return false;
   return currencyKeys.some((needle) => lower.includes(needle));
 }
 
@@ -59,7 +61,7 @@ export function reportCellText(key: string, value: unknown): string {
 }
 
 /** Raw value for CSV so spreadsheets can still do arithmetic on numbers. */
-export function reportCellRaw(key: string, value: unknown): string | number {
+export function reportCellRaw(_key: string, value: unknown): string | number {
   if (value === null || value === undefined) return '';
   if (typeof value === 'number') return value;
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
@@ -90,10 +92,10 @@ function flattenCustomerDetails(rows: Row[]): Row[] {
       email: customer.email ?? null,
       address: customer.address ?? null,
       emergency_contacts: contacts.length ?
-      contacts.
-      map((c) => `${c.name ?? ''}${c.relation ? ` (${c.relation})` : ''}${c.mobile_number ? ` · ${c.mobile_number}` : ''}`).
-      join('; ') :
-      null
+        contacts.
+          map((c) => `${c.name ?? ''}${c.relation ? ` (${c.relation})` : ''}${c.mobile_number ? ` · ${c.mobile_number}` : ''}`).
+          join('; ') :
+        null
     };
     const leases = Array.isArray(row.leases) ? row.leases as Row[] : [];
     if (!leases.length) {

@@ -1,7 +1,7 @@
 import type { AuthUser, TokenPair } from '../types';
 import { normalizeRequestBody, normalizeResponse } from './normalize';
 
-const API_BASE_URL = 'https://thiranda-813344430767.asia-southeast1.run.app';
+const API_BASE_URL = 'https://thiranda.devrious.lk';
 
 export type ApiErrorKind = 'network' | 'auth' | 'validation' | 'http';
 

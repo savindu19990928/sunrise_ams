@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, useEffect, useMemo, useState } from 'react';
 import type { Customer, Lease, Room } from '../../types';
 import type { ApiError } from '../../utils/api';
 import { formatCurrency, titleCase, toNumber, today } from '../../utils/format';
@@ -22,6 +22,7 @@ interface FormState {
   customer: string;
   room: string;
   start_date: string;
+  end_date: string;
   base_rent_fee: string;
   base_deposit: string;
   minimum_deposit_threshold: string;
@@ -32,6 +33,7 @@ const emptyState: FormState = {
   customer: '',
   room: '',
   start_date: today(),
+  end_date: '',
   base_rent_fee: '',
   base_deposit: '',
   minimum_deposit_threshold: '',
@@ -60,13 +62,14 @@ export function LeaseForm({
     if (!open) return;
     setTouched(false);
     if (!lease) {
-      setForm({ ...emptyState, start_date: today() });
+      setForm({ ...emptyState, start_date: today(), end_date: '' });
       return;
     }
     setForm({
       customer: String(lease.customer),
       room: String(lease.room),
       start_date: lease.start_date ?? today(),
+      end_date: lease.end_date ?? '',
       base_rent_fee: asInput(lease.base_rent_fee ?? lease.rent_fee),
       base_deposit: asInput(lease.base_deposit ?? lease.deposit_paid),
       minimum_deposit_threshold: asInput(lease.minimum_deposit_threshold),
@@ -96,8 +99,8 @@ export function LeaseForm({
     setForm((prev) => ({ ...prev, customer: customerId }));
   };
 
-  const set = (key: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-  setForm((prev) => ({ ...prev, [key]: event.target.value }));
+  const set = (key: keyof FormState) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((prev) => ({ ...prev, [key]: event.target.value }));
 
   const baseRent = toNumber(form.base_rent_fee);
   const monthlyRent = form.rent_fee === '' ? baseRent : toNumber(form.rent_fee);
@@ -107,13 +110,20 @@ export function LeaseForm({
   const deductible = Math.max(0, depositPaid - threshold);
   const monthsCovered = derivedDeduction > 0 ? Math.ceil(deductible / derivedDeduction) : 0;
 
+  const endDateError = !form.end_date
+    ? 'Select an end date.'
+    : form.start_date && form.end_date < form.start_date
+      ? 'End date must be on or after the start date.'
+      : undefined;
+
   const handleSubmit = () => {
     setTouched(true);
-    if (!form.customer || !form.room || !form.start_date) return;
+    if (!form.customer || !form.room || !form.start_date || endDateError) return;
     const payload: Record<string, unknown> = {
       customer: toNumber(form.customer),
       room: toNumber(form.room),
       start_date: form.start_date,
+      end_date: form.end_date,
       base_rent_fee: baseRent.toFixed(2),
       base_deposit: depositPaid.toFixed(2),
       minimum_deposit_threshold: threshold.toFixed(2),
@@ -170,10 +180,34 @@ export function LeaseForm({
             )}
           </Select>
         </Field>
-        <Field label="Start date" htmlFor="lease_start" required>
+        <Field label="Start date" htmlFor="lease_start" required hint="Day of month is the rent due date.">
           <Input id="lease_start" type="date" value={form.start_date} onChange={set('start_date')} />
         </Field>
+        <Field
+          label="End date"
+          htmlFor="lease_end"
+          required
+          hint="Can be extended later without extra deposit."
+          error={touched ? endDateError : undefined}
+        >
+          <Input
+            id="lease_end"
+            type="date"
+            min={form.start_date || undefined}
+            value={form.end_date}
+            onChange={set('end_date')}
+          />
+        </Field>
       </div>
+
+      {lease && lease.expected_deposit_refund_at_end_date !== undefined && lease.expected_deposit_refund_at_end_date !== null && (
+        <div className="rounded-lg border border-line bg-subtle px-3.5 py-2.5 text-[13px] text-ink-muted">
+          Expected deposit refund at end date:{' '}
+          <span className="font-semibold text-ink">
+            {formatCurrency(lease.expected_deposit_refund_at_end_date)}
+          </span>
+        </div>
+      )}
 
       <fieldset className="border-t border-line pt-4">
         <legend className="pr-2 text-[13px] font-medium text-ink">Agreement &amp; rent terms</legend>

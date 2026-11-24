@@ -1,14 +1,15 @@
 import type {
   ID,
   NormalizedBuildingServiceBill,
-  NormalizedMonthlyServiceSummary,
   NormalizedPreviousMonthItem,
   NormalizedPreviousReading,
+  NormalizedMonthlyServiceSummary,
   NormalizedServicePayment,
   NormalizedServiceRow,
-  ServiceKind
+  ServiceKind,
+  ServicePaymentResponse
 } from '../types';
-import { toNumber } from './format';
+import { formatCurrency, formatMonth, toNumber } from './format';
 
 export interface ServiceConfig {
   kind: ServiceKind;
@@ -27,6 +28,7 @@ export interface ServiceConfig {
   roomHistoryPath: string;
   bulkUnitPricesPath: string;
   paymentsPath: string;
+  recordRoomPaymentPath: string;
   roomPrevReadingsPath: (roomId: ID | string) => string;
   setUnitPricePath: (id: ID) => string;
   recordPaymentPath: (id: ID) => string;
@@ -57,6 +59,7 @@ export const SERVICE_CONFIG: Record<ServiceKind, ServiceConfig> = {
     roomHistoryPath: '/api/electricity/room-history/',
     bulkUnitPricesPath: '/api/electricity/set-unit-prices/',
     paymentsPath: '/api/electricity-payments/',
+    recordRoomPaymentPath: '/api/electricity/record-payment/',
     roomPrevReadingsPath: (roomId) => `/api/rooms/${roomId}/previous-electricity-readings/`,
     setUnitPricePath: (id) => `/api/electricity/${id}/set-unit-prices/`,
     recordPaymentPath: (id) => `/api/electricity/${id}/record-payment/`,
@@ -85,6 +88,7 @@ export const SERVICE_CONFIG: Record<ServiceKind, ServiceConfig> = {
     roomHistoryPath: '/api/water/room-history/',
     bulkUnitPricesPath: '/api/water/set-unit-prices/',
     paymentsPath: '/api/water-payments/',
+    recordRoomPaymentPath: '/api/water/record-payment/',
     roomPrevReadingsPath: (roomId) => `/api/rooms/${roomId}/previous-water-readings/`,
     setUnitPricePath: (id) => `/api/water/${id}/set-unit-prices/`,
     recordPaymentPath: (id) => `/api/water/${id}/record-payment/`,
@@ -124,6 +128,7 @@ export function normalizeBuildingBill(kind: ServiceKind, raw: unknown): Normaliz
   if (!isRecord(raw)) return null;
   const id = Number(firstDefined(raw.id) ?? 0);
   const billing_month = String(firstDefined(raw.billing_month) ?? '');
+  const billing_date = (firstDefined(raw.billing_date) as string | null | undefined) ?? null;
   const total_bill = firstDefined(raw[`total_${kind}_bill`], raw.total_bill) as number | string | undefined;
   const total_units = firstDefined(raw[`total_${kind}_units`], raw.total_units) as number | string | undefined;
   const supplier_units = firstDefined(raw[`supplier_${kind}_units`], raw.supplier_units) as number | string | undefined;
@@ -133,17 +138,16 @@ export function normalizeBuildingBill(kind: ServiceKind, raw: unknown): Normaliz
     raw[`default_${kind}_unit_price`],
     raw.unit_price
   ) as number | string | undefined;
-  const due_date = (raw.due_date as string | null | undefined) ?? null;
 
   return {
     id,
     billing_month,
+    billing_date,
     total_bill: total_bill ?? 0,
     total_units: total_units ?? 0,
     supplier_units: supplier_units ?? null,
     units_difference: units_difference ?? null,
-    unit_price: unit_price ?? 0,
-    due_date
+    unit_price: unit_price ?? 0
   };
 }
 
@@ -160,6 +164,7 @@ export function normalizeServiceRow(kind: ServiceKind, raw: unknown, fallbackMon
     room_type: typeof item.room_type === 'string' ? item.room_type : undefined,
     customer_name: typeof item.customer_name === 'string' ? item.customer_name : null,
     billing_month: String(firstDefined(item.billing_month, fallbackMonth) ?? ''),
+    billing_date: (firstDefined(item.billing_date) as string | null | undefined) ?? null,
     previous_meter_reading: firstDefined(
       item[`previous_${kind}_meter_reading`],
       item.previous_meter_reading
@@ -187,8 +192,7 @@ export function normalizeServiceRow(kind: ServiceKind, raw: unknown, fallbackMon
       item[`${kind}_credit_balance`],
       item.room_credit_balance
     ) as number | string | undefined,
-    is_paid: Boolean(item.is_paid),
-    due_date: (item.due_date as string | null | undefined) ?? null
+    is_paid: Boolean(item.is_paid)
   };
 }
 
@@ -308,4 +312,41 @@ export function serviceRemaining(row: {
     return Math.max(0, toNumber(row.remaining_balance));
   }
   return Math.max(0, toNumber(row.cost) - toNumber(row.total_paid));
+}
+
+/** Builds a descriptive toast showing FIFO bill allocations and room-only advance credit from the API response. */
+export function formatServicePaymentToast(
+  kind: ServiceKind,
+  roomNumber: string,
+  response: ServicePaymentResponse | null | undefined,
+  fallbackExcess = 0
+): string {
+  const config = SERVICE_CONFIG[kind];
+  if (response?.message && response.message.trim()) {
+    return response.message;
+  }
+  const parts: string[] = [`${config.label} payment recorded to ${config.supplierShort} for Room ${roomNumber}.`];
+  const allocations = Array.isArray(response?.allocations) ? response.allocations : [];
+  if (allocations.length > 0) {
+    const summary = allocations
+      .map((item) => {
+        const applied = item.applied_amount ?? item.amount_applied;
+        const month = item.billing_month ? formatMonth(item.billing_month) : '';
+        return applied !== undefined ? `${month ? `${month}: ` : ''}${formatCurrency(applied)}` : month;
+      })
+      .filter(Boolean)
+      .join(', ');
+    if (summary) parts.push(`Allocated (oldest unpaid first): ${summary}.`);
+  }
+  const excess = response?.excess_credit_added !== undefined ? toNumber(response.excess_credit_added) : fallbackExcess;
+  const creditBalance =
+    kind === 'electricity'
+      ? response?.room_electricity_credit_balance
+      : response?.room_water_credit_balance;
+  if (excess > 0) {
+    parts.push(`${formatCurrency(excess)} added to Room ${roomNumber} ${config.lowerLabel} credit.`);
+  } else if (creditBalance !== undefined && toNumber(creditBalance) > 0) {
+    parts.push(`Room ${config.lowerLabel} credit: ${formatCurrency(creditBalance)}.`);
+  }
+  return parts.join(' ');
 }

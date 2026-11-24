@@ -1,12 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ClipboardListIcon, LogOutIcon, PencilIcon, PlusIcon } from 'lucide-react';
+import {
+  CalendarCheck2Icon,
+  CalendarPlusIcon,
+  ClipboardListIcon,
+  LogOutIcon,
+  PencilIcon,
+  PlusIcon
+} from 'lucide-react';
 import type { Customer, Lease, Room } from '../types';
 import { useCollection } from '../hooks/useResource';
 import { useCrud } from '../hooks/useCrud';
-import { LeaseForm } from '../components/leases/LeaseForm';
-import { TerminateLeaseModal } from '../components/leases/TerminateLeaseModal';
 import { DeductionInfoCard } from '../components/leases/DeductionInfoCard';
+import { ExtendLeaseModal } from '../components/leases/ExtendLeaseModal';
+import { LeaseForm } from '../components/leases/LeaseForm';
+import { ProcessEndedLeasesModal } from '../components/leases/ProcessEndedLeasesModal';
+import { TerminateLeaseModal } from '../components/leases/TerminateLeaseModal';
 import { ApiErrorState } from '../components/ui/ApiErrorState';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -15,7 +24,7 @@ import { type Column, DataTable } from '../components/ui/DataTable';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Select } from '../components/ui/Field';
 import { SearchInput } from '../components/ui/SearchInput';
-import { formatCurrency, formatDate, toNumber } from '../utils/format';
+import { formatCurrency, formatDate, toNumber, today } from '../utils/format';
 import {
   depositBalance,
   leaseCustomerName,
@@ -32,7 +41,9 @@ export function Leases() {
   const { data: customers } = useCollection<Customer>('/api/customers/');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Lease | null>(null);
-  const [terminating, setTerminating] = useState<Lease | null>(null);
+  const [extending, setExtending] = useState<Lease | null>(null);
+  const [closing, setClosing] = useState<{ lease: Lease; mode: 'terminate' | 'end-lease'; } | null>(null);
+  const [processEndedOpen, setProcessEndedOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('active');
 
@@ -58,6 +69,11 @@ export function Leases() {
   const customerMap = useMemo(() => mapById(customers), [customers]);
   const roomMap = useMemo(() => mapById(rooms), [rooms]);
   const activeLeases = useMemo(() => leases.filter((lease) => lease.is_active), [leases]);
+  const todayDate = today();
+  const expiredActiveLeases = useMemo(
+    () => activeLeases.filter((lease) => Boolean(lease.end_date && lease.end_date <= todayDate)),
+    [activeLeases, todayDate]
+  );
 
   const decorated = useMemo(
     () =>
@@ -97,11 +113,17 @@ export function Leases() {
   {
     key: 'period',
     header: 'Period',
-    render: (lease) =>
-    <span className="whitespace-nowrap text-ink-muted">
-          {formatDate(lease.start_date)} → {lease.end_date ? formatDate(lease.end_date) : 'ongoing'}
-        </span>
-
+    render: (lease) => {
+      const endReached = Boolean(lease.is_active && lease.end_date && lease.end_date <= todayDate);
+      return (
+        <div className="space-y-0.5 whitespace-nowrap text-ink-muted">
+          <span className="block">
+            {formatDate(lease.start_date)} → {lease.end_date ? formatDate(lease.end_date) : '—'}
+          </span>
+          {endReached && <Badge tone="warn">End date reached</Badge>}
+        </div>
+      );
+    }
   },
   {
     key: 'rent',
@@ -135,6 +157,13 @@ export function Leases() {
     <span className="whitespace-nowrap">
           <span className="font-medium text-ink">{formatCurrency(depositBalance(lease))}</span>
           <span className="ml-1 text-[12px] text-ink-soft">of {formatCurrency(lease.deposit_paid)}</span>
+          {lease.is_active &&
+            lease.expected_deposit_refund_at_end_date !== undefined &&
+            lease.expected_deposit_refund_at_end_date !== null && (
+              <span className="block text-[11px] text-ink-soft">
+                Est. refund {formatCurrency(lease.expected_deposit_refund_at_end_date)}
+              </span>
+            )}
         </span>
 
   },
@@ -156,7 +185,7 @@ export function Leases() {
     <Badge tone="success">Active</Badge> :
 
     <Badge>
-            Terminated
+            Ended
             {lease.final_deposit_refund !== undefined && lease.final_deposit_refund !== null ?
       ` · refunded ${formatCurrency(lease.final_deposit_refund)}` :
       ''}
@@ -169,17 +198,26 @@ export function Leases() {
     <div className="space-y-5">
       <PageHeader
         title="Leases"
-        description="Assign a customer to a room, track the deposit balance, and terminate with a move-out repair cost."
+        description="Assign rooms with required end dates, extend without extra deposit, and close with move-out special repairs and closing bill data."
         actions={
-        <Button
-          icon={PlusIcon}
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}>
-          
-            Assign room
+        <>
+          <Button
+            variant="secondary"
+            icon={CalendarCheck2Icon}
+            onClick={() => setProcessEndedOpen(true)}
+          >
+            Process ended{expiredActiveLeases.length > 0 ? ` (${expiredActiveLeases.length})` : ''}
           </Button>
+          <Button
+            icon={PlusIcon}
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}>
+            
+              Assign room
+            </Button>
+        </>
         } />
       
 
@@ -197,7 +235,7 @@ export function Leases() {
               className="sm:w-40">
               
                 <option value="active">Active only</option>
-                <option value="terminated">Terminated</option>
+                <option value="terminated">Ended / terminated</option>
                 <option value="all">All leases</option>
               </Select>
             </div>
@@ -224,32 +262,55 @@ export function Leases() {
                 </Button>
 
           }
-          rowActions={(lease) =>
-          <>
+          rowActions={(lease) => {
+            const endReached = Boolean(lease.is_active && lease.end_date && lease.end_date <= todayDate);
+            return (
+              <>
                 <Button
-              variant="secondary"
-              size="sm"
-              icon={PencilIcon}
-              onClick={() => {
-                setEditing(lease);
-                setFormOpen(true);
-              }}>
-              
+                  variant="secondary"
+                  size="sm"
+                  icon={PencilIcon}
+                  onClick={() => {
+                    setEditing(lease);
+                    setFormOpen(true);
+                  }}
+                >
                   Edit
                 </Button>
-                {lease.is_active &&
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={LogOutIcon}
-              className="text-danger-600 hover:bg-danger-50 hover:text-danger-700"
-              onClick={() => setTerminating(lease)}>
-              
-                    Terminate
-                  </Button>
-            }
+                {lease.is_active && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={CalendarPlusIcon}
+                      onClick={() => setExtending(lease)}
+                    >
+                      Extend
+                    </Button>
+                    {endReached && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={CalendarCheck2Icon}
+                        onClick={() => setClosing({ lease, mode: 'end-lease' })}
+                      >
+                        End lease
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={LogOutIcon}
+                      className="text-danger-600 hover:bg-danger-50 hover:text-danger-700"
+                      onClick={() => setClosing({ lease, mode: 'terminate' })}
+                    >
+                      Terminate
+                    </Button>
+                  </>
+                )}
               </>
-          } />
+            );
+          }} />
 
         }
       </Card>
@@ -270,15 +331,36 @@ export function Leases() {
         onSubmit={(payload) => editing ? crud.update(editing.id, payload) : crud.create(payload)} />
       
 
+      <ExtendLeaseModal
+        open={Boolean(extending)}
+        lease={extending}
+        onClose={() => setExtending(null)}
+        onDone={() => {
+          reload();
+          reloadRooms();
+        }}
+      />
+
       <TerminateLeaseModal
-        open={Boolean(terminating)}
-        lease={terminating}
-        threshold={leaseThreshold(terminating)}
-        onClose={() => setTerminating(null)}
+        open={Boolean(closing)}
+        lease={closing?.lease ?? null}
+        mode={closing?.mode ?? 'terminate'}
+        threshold={leaseThreshold(closing?.lease ?? null)}
+        onClose={() => setClosing(null)}
         onDone={() => {
           reload();
           reloadRooms();
         }} />
+
+      <ProcessEndedLeasesModal
+        open={processEndedOpen}
+        leases={decorated}
+        onClose={() => setProcessEndedOpen(false)}
+        onDone={() => {
+          reload();
+          reloadRooms();
+        }}
+      />
       
     </div>);
 

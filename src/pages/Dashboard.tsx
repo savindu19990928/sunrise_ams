@@ -36,7 +36,7 @@ import {
   titleCase,
   toNumber
 } from '../utils/format';
-import { billOutstanding, billRentDue, billStatus, depositBalance } from '../utils/lookup';
+import { billDueDate, billOutstanding, billRentDue, billStatus, depositBalance } from '../utils/lookup';
 
 const quickActions = [
   { label: 'Add customer', to: '/customers?new=1', icon: UserPlusIcon },
@@ -136,7 +136,9 @@ export function Dashboard() {
     {
       key: 'due',
       header: 'Due',
-      render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatDate(bill.due_date)}</span>
+      render: (bill) => (
+        <span className="whitespace-nowrap text-ink-muted">{formatDate(billDueDate(bill))}</span>
+      )
     },
     {
       key: 'total',

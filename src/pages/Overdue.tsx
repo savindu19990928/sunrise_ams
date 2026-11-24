@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { BanknoteIcon, CheckCircle2Icon, RefreshCwIcon } from 'lucide-react';
 import type { Bill, OverduePayment } from '../types';
 import { useBillingData } from '../hooks/useBillingData';
@@ -65,7 +65,7 @@ export function Overdue() {
     <div className="space-y-5">
       <PageHeader
         title="Overdue payments"
-        description="Bills past their due date with an outstanding balance."
+        description="Room rent bills past their lease-start due date with an outstanding balance. Late payments remain accepted."
         actions={
         <Button variant="secondary" icon={RefreshCwIcon} onClick={reload}>
             Refresh

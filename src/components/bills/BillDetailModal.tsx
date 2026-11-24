@@ -11,6 +11,7 @@ import {
 } from '../../utils/billPdf';
 import { formatCurrency, formatDate, formatMonth, titleCase, toNumber } from '../../utils/format';
 import {
+  billDueDate,
   billElectricityRemaining,
   billOutstanding,
   billRentDue,
@@ -27,7 +28,8 @@ import { Modal } from '../ui/Modal';
 const statusTone: Record<string, BadgeTone> = {
   paid: 'success',
   partial: 'warn',
-  unpaid: 'danger'
+  unpaid: 'danger',
+  overdue: 'danger'
 };
 
 interface BillDetailModalProps {
@@ -142,7 +144,18 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
           <div className="mt-4 space-y-5">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={statusTone[billStatus(bill)] ?? 'neutral'}>{titleCase(billStatus(bill))}</Badge>
-              <span className="text-[13px] text-ink-muted">Due {formatDate(bill.due_date)}</span>
+              <span className="text-[13px] text-ink-muted">Room payment due {formatDate(billDueDate(bill))}</span>
+              {bill.is_overdue && outstanding > 0 && (
+                <Badge tone="danger">{bill.days_overdue ?? 0} days overdue · late payment allowed</Badge>
+              )}
+              {(bill.lease_start_date || bundle?.lease?.start_date) && (
+                <span className="text-[12px] text-ink-soft">
+                  Lease {formatDate(bill.lease_start_date ?? bundle?.lease?.start_date)} →{' '}
+                  {bill.lease_end_date || bundle?.lease?.end_date
+                    ? formatDate(bill.lease_end_date ?? bundle?.lease?.end_date)
+                    : '—'}
+                </span>
+              )}
             </div>
 
             <div className="overflow-hidden rounded-xl border border-bill-line bg-surface/70">
@@ -165,6 +178,21 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
             <div className="rounded-xl border border-bill-line bg-surface/70 px-4">
               <dl className="divide-y divide-bill-line">
                 <Line label="Deposit balance after this bill" value={formatCurrency(bill.remaining_deposit)} />
+                <Line
+                  label="Expected deposit refund at lease end"
+                  value={formatCurrency(
+                    bill.deposit_refund_at_end_date ??
+                      bundle?.lease?.expected_deposit_refund_at_end_date ??
+                      bill.remaining_deposit
+                  )}
+                />
+                {bill.remaining_months_until_end_date !== undefined && (
+                  <Line
+                    label={`Projected deductions (${bill.remaining_months_until_end_date} mo remaining)`}
+                    value={`− ${formatCurrency(bill.remaining_deposit_deductions_until_end_date ?? 0)}`}
+                    muted
+                  />
+                )}
                 <Line label="Rent paid so far" value={formatCurrency(bill.amount_paid)} />
                 <div className="flex items-baseline justify-between gap-4 py-2.5">
                   <dt className="text-sm font-medium text-ink">Rent outstanding</dt>
@@ -174,6 +202,45 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
                 </div>
               </dl>
             </div>
+
+            <div className="rounded-xl border border-bill-line bg-surface/70 px-4">
+              <dl className="divide-y divide-bill-line">
+                <Line
+                  label="Gross charges across rent, electricity & water"
+                  value={formatCurrency(
+                    bill.gross_total_fee ?? billRentDue(bill) + toNumber(bill.electricity) + toNumber(bill.water)
+                  )}
+                  muted
+                />
+                <div className="flex items-baseline justify-between gap-4 py-2.5">
+                  <dt className="text-sm font-medium text-ink">Total remaining across all 3 recipients</dt>
+                  <dd className="text-sm font-semibold text-ink">
+                    {formatCurrency(bill.total_fee ?? outstanding + elecRemaining + waterRemaining)}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            {(toNumber(bill.move_out_repair_cost) > 0 || toNumber(bill.room_repair_cost) > 0) && (
+              <div>
+                <h3 className="text-[13px] font-medium text-ink">Room repairs (closing settlement)</h3>
+                <dl className="mt-1 divide-y divide-bill-line rounded-xl border border-bill-line bg-surface/70 px-4">
+                  <Line label="Move-out special repairs" value={formatCurrency(bill.move_out_repair_cost ?? 0)} />
+                  {bill.regular_room_repair_cost !== undefined && (
+                    <Line label="Regular room repairs" value={formatCurrency(bill.regular_room_repair_cost)} />
+                  )}
+                  <div className="flex items-baseline justify-between gap-4 py-2.5">
+                    <dt className="text-sm font-medium text-ink">Total room repairs</dt>
+                    <dd className="text-sm font-semibold text-ink">
+                      {formatCurrency(
+                        bill.room_repair_cost ??
+                          toNumber(bill.move_out_repair_cost) + toNumber(bill.regular_room_repair_cost)
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            )}
 
             <div>
               <div className="flex items-baseline justify-between gap-3">

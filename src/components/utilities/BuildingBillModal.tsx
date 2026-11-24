@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ID, Lease, NormalizedMonthlyServiceSummary, Room, ServiceKind } from '../../types';
 import { type ApiError, apiRequest, buildQuery } from '../../utils/api';
-import { formatCurrency, formatMonth, toNumber } from '../../utils/format';
+import { formatCurrency, formatDate, formatMonth, toNumber, today } from '../../utils/format';
 import { extractMonthlySummary, extractPreviousReadings, SERVICE_CONFIG } from '../../utils/serviceRecords';
 import { formatDifference, formatPerDay, formatUnits, usageDifference } from '../../utils/utilityUsage';
 import { Field, Input } from '../ui/Field';
@@ -77,9 +77,8 @@ export function BuildingBillModal({
   onSubmit
 }: BuildingBillModalProps) {
   const config = SERVICE_CONFIG[kind];
-  const [month, setMonth] = useState(defaultMonth);
+  const [billingDate, setBillingDate] = useState('');
   const [activeSummary, setActiveSummary] = useState<NormalizedMonthlyServiceSummary | null>(existing);
-  const [dueDate, setDueDate] = useState('');
   const [totalBill, setTotalBill] = useState('');
   const [supplierUnits, setSupplierUnits] = useState('');
   const [reason, setReason] = useState('');
@@ -88,7 +87,9 @@ export function BuildingBillModal({
   const [prevReadingsLoading, setPrevReadingsLoading] = useState(false);
   const [touched, setTouched] = useState(false);
 
-  const applySummaryHeader = (summary: NormalizedMonthlyServiceSummary | null, targetMonth: string) => {
+  const month = /^\d{4}-\d{2}-\d{2}$/.test(billingDate) ? billingDate.slice(0, 7) : '';
+
+  const applySummaryHeader = (summary: NormalizedMonthlyServiceSummary | null) => {
     const bill = summary?.building_bill;
     setActiveSummary(summary);
     setTotalBill(bill ? String(toNumber(bill.total_bill)) : '');
@@ -97,15 +98,18 @@ export function BuildingBillModal({
         ? String(toNumber(bill.supplier_units))
         : ''
     );
-    setDueDate(bill?.due_date ?? `${targetMonth}-28`);
     setReason('');
   };
 
   useEffect(() => {
     if (!open) return;
     setTouched(false);
-    setMonth(defaultMonth);
-    applySummaryHeader(existing, defaultMonth);
+    const currentDay = today();
+    const initialDate =
+      existing?.building_bill?.billing_date ||
+      (currentDay.startsWith(defaultMonth) ? currentDay : `${defaultMonth}-01`);
+    setBillingDate(initialDate);
+    applySummaryHeader(existing);
     setReadings(seedFromSummary(existing));
     const seededPrev: Record<string, number> = {};
     for (const row of existing?.rows ?? []) {
@@ -139,7 +143,7 @@ export function BuildingBillModal({
         if (controller.signal.aborted) return;
 
         if (month !== defaultMonth) {
-          applySummaryHeader(monthSummary, month);
+          applySummaryHeader(monthSummary);
           setReadings(seedFromSummary(monthSummary));
         }
 
@@ -252,9 +256,8 @@ export function BuildingBillModal({
       });
 
     const payload: Record<string, unknown> = {
-      billing_month: `${month}-01`,
+      billing_date: billingDate,
       [config.totalBillKey]: toNumber(totalBill),
-      due_date: dueDate || undefined,
       ...(supplierUnits !== '' ? { [config.supplierUnitsKey]: toNumber(supplierUnits) } : {}),
       ...(activeSummary?.building_bill && reason.trim() ? { reason: reason.trim() } : {}),
       room_readings: roomReadings
@@ -264,6 +267,8 @@ export function BuildingBillModal({
   };
 
   const noUsage = touched && includedCount === 0;
+  const existingBillingDate = activeSummary?.building_bill?.billing_date;
+  const dateError = touched && !month ? 'Select an exact billing date.' : undefined;
 
   return (
     <FormModal
@@ -280,12 +285,19 @@ export function BuildingBillModal({
       error={error}
       size="lg"
     >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Billing month" htmlFor="bb_month" required>
-          <Input id="bb_month" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
-        </Field>
-        <Field label="Due date" htmlFor="bb_due">
-          <Input id="bb_due" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field
+          label="Billing date"
+          htmlFor="bb_date"
+          required
+          error={dateError}
+          hint={
+            existingBillingDate && existingBillingDate !== billingDate
+              ? `Existing bill dated ${formatDate(existingBillingDate)}`
+              : undefined
+          }
+        >
+          <Input id="bb_date" type="date" value={billingDate} onChange={(event) => setBillingDate(event.target.value)} />
         </Field>
         <Field
           label={`Total ${config.lowerLabel} bill`}

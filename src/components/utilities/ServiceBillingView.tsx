@@ -10,7 +10,7 @@ import {
   Trash2Icon,
   WalletIcon
 } from 'lucide-react';
-import type { Lease, NormalizedServiceRow, Room, ServiceKind } from '../../types';
+import type { Lease, NormalizedServiceRow, Room, ServiceKind, ServicePaymentResponse } from '../../types';
 import { useAction } from '../../hooks/useAction';
 import { useCrud } from '../../hooks/useCrud';
 import { useCollection, useResource } from '../../hooks/useResource';
@@ -21,6 +21,7 @@ import { notifyRemindersChanged } from '../../utils/reminders';
 import {
   extractMonthlySummary,
   extractPreviousReadings,
+  formatServicePaymentToast,
   SERVICE_CONFIG,
   serviceRemaining
 } from '../../utils/serviceRecords';
@@ -188,8 +189,8 @@ export function ServiceBillingView({ kind }: ServiceBillingViewProps) {
             ) : (
               <Badge tone="danger">Unpaid</Badge>
             )}
-            {!row.is_paid && remaining > 0 && row.due_date && (
-              <span className="text-[11px] text-ink-soft">Due {formatDate(row.due_date)}</span>
+            {row.billing_date && (
+              <span className="text-[11px] text-ink-soft">Billed {formatDate(row.billing_date)}</span>
             )}
             {credit > 0 && (
               <span className="text-[11px] font-medium text-brand-700">
@@ -433,13 +434,13 @@ export function ServiceBillingView({ kind }: ServiceBillingViewProps) {
           setPaying(null);
           paymentAction.setError(null);
         }}
-        onSubmit={async (row, payload, excess) => {
-          const result = await paymentAction.run(
-            config.recordPaymentPath(row.record_id),
+        onSubmit={async (target, payload, excess) => {
+          const recordId = target.recordId ?? paying?.record_id;
+          if (!recordId) return;
+          const result = await paymentAction.run<ServicePaymentResponse>(
+            config.recordPaymentPath(recordId),
             payload,
-            excess > 0
-              ? `${config.label} payment recorded to ${config.supplierShort}. ${formatCurrency(excess)} kept as advance ${config.lowerLabel} credit for Room ${row.room_number}.`
-              : `${config.label} payment recorded to ${config.supplierShort} for Room ${row.room_number}.`
+            (res) => formatServicePaymentToast(kind, target.roomNumber, res, excess)
           );
           if (!result) return;
           setPaying(null);

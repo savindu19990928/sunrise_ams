@@ -1,6 +1,6 @@
 # Sunrise AMS API Documentation
 
-**Base URL:** `https://thiranda-813344430767.asia-southeast1.run.app`
+**Base URL:** `https://thiranda.devrious.lk`
 
 ---
 
@@ -574,7 +574,7 @@ Authorization: Bearer <access_token>
 
 ### 4.7 Customer Leave Room
 - **Endpoint:** `POST /api/customers/{id}/leave-room/`
-- **Summary:** Action when a customer is leaving their rented room. Automatically finds their active lease, ends it (`active=False`, `end_date=today`), deducts all undeducted repairs (plus any optional move-out repair submitted in request body) from their remaining deposit balance, and calculates the final refund.
+- **Summary:** Action when a customer is leaving their rented room. Automatically finds their active lease, ends it (`active=False`, `end_date=today`), records any submitted move-out special repairs separately in `MoveOutRepair`, deducts all undeducted move-out and regular repairs from `current_deposit_balance`, refunds the remainder (`final_deposit_refund`), and returns complete closing `bill_data` (including `move_out_repair_cost`, `room_repair_cost`, `move_out_repairs`, `latest_bill`, `unpaid_bills`, `unpaid_electricity_bills`, and `unpaid_water_bills`). See Section 6.7 for the full response format.
 - **Example Request:**
   ```http
   POST /api/customers/1/leave-room/ HTTP/1.1
@@ -819,7 +819,7 @@ Authorization: Bearer <access_token>
       "customer": 1,
       "customer_name": "Kasun Perera",
       "start_date": "2026-01-01",
-      "end_date": null,
+      "end_date": "2026-12-31",
       "active": true,
       "base_rent_fee": "15000.00",
       "base_deposit": "50000.00",
@@ -831,6 +831,7 @@ Authorization: Bearer <access_token>
       "current_applicable_deposit_deduction": "1000.00",
       "effective_rent_fee": "14000.00",
       "total_payments_received": "30000.00",
+      "expected_deposit_refund_at_end_date": "38000.00",
       "created_at": "2026-01-01T08:00:00Z"
     }
   ]
@@ -838,7 +839,7 @@ Authorization: Bearer <access_token>
 
 ### 6.2 Create Lease
 - **Endpoint:** `POST /api/leases/`
-- **Summary:** Creates a new lease agreement assigning a customer to a room. All financial terms (`base_rent_fee`, `base_deposit`, `rent_fee`, `initial_deposit`, `current_deposit_balance`, `monthly_deposit_deduction`, `minimum_deposit_threshold`) are owned by the lease itself (`base_rent_fee`/`rent_fee` and `base_deposit`/`initial_deposit` sync with each other if only one pair is supplied, and `current_deposit_balance` defaults to `initial_deposit` if omitted).
+- **Summary:** Creates a new lease agreement assigning a customer to a room. **`end_date` is required** (`end_date >= start_date`). All financial terms (`base_rent_fee`, `base_deposit`, `rent_fee`, `initial_deposit`, `current_deposit_balance`, `monthly_deposit_deduction`, `minimum_deposit_threshold`) are owned by the lease itself (`base_rent_fee`/`rent_fee` and `base_deposit`/`initial_deposit` sync with each other if only one pair is supplied, and `current_deposit_balance` defaults to `initial_deposit` if omitted).
 - **Example Request:**
   ```http
   POST /api/leases/ HTTP/1.1
@@ -850,6 +851,7 @@ Authorization: Bearer <access_token>
     "customer": 2,
     "room": 2,
     "start_date": "2026-11-01",
+    "end_date": "2027-11-01",
     "active": true,
     "base_rent_fee": "20000.00",
     "base_deposit": "60000.00",
@@ -873,7 +875,7 @@ Authorization: Bearer <access_token>
     "customer": 2,
     "customer_name": "Jane Silva",
     "start_date": "2026-11-01",
-    "end_date": null,
+    "end_date": "2027-11-01",
     "active": true,
     "base_rent_fee": "20000.00",
     "base_deposit": "60000.00",
@@ -885,13 +887,22 @@ Authorization: Bearer <access_token>
     "current_applicable_deposit_deduction": "1200.00",
     "effective_rent_fee": "18800.00",
     "total_payments_received": "0.00",
+    "expected_deposit_refund_at_end_date": "45600.00",
     "created_at": "2026-10-11T14:30:00Z"
   }
   ```
 
+### 6.2b Extend / Expand Lease End Date (No Extra Deposit Required)
+- **Endpoints:** `POST /api/leases/{id}/extend/`, `POST /api/leases/{id}/expand/`, or `PATCH /api/leases/{id}/`
+- **Summary:** Extends or updates the lease `end_date` without requiring any additional security deposit. Recomputes `expected_deposit_refund_at_end_date` and any generated bills' `deposit_refund_at_end_date`.
+- **Example Request:**
+  ```json
+  { "end_date": "2028-05-01" }
+  ```
+
 ### 6.3 Retrieve Lease
 - **Endpoint:** `GET /api/leases/{id}/`
-- **Summary:** Retrieves details of a specific lease including live calculated deposit deductions.
+- **Summary:** Retrieves details of a specific lease including live calculated deposit deductions and `expected_deposit_refund_at_end_date`.
 - **Example Request:**
   ```http
   GET /api/leases/1/ HTTP/1.1
@@ -907,10 +918,11 @@ Authorization: Bearer <access_token>
     "id": 1,
     "current_applicable_deposit_deduction": "1000.00",
     "effective_rent_fee": "14000.00",
+    "expected_deposit_refund_at_end_date": "38000.00",
     "customer": 1,
     "room": 1,
     "start_date": "2026-01-01",
-    "end_date": null,
+    "end_date": "2026-12-31",
     "active": true,
     "rent_fee": "15000.00",
     "initial_deposit": "50000.00",
@@ -1015,8 +1027,8 @@ Authorization: Bearer <access_token>
   ```
 
 ### 6.7 Terminate Lease (Customer Leaving Room)
-- **Endpoint:** `POST /api/leases/{id}/terminate/` (also available via `POST /api/leases/{id}/leave-room/`)
-- **Summary:** Ends an active lease when a tenant vacates. Automatically sets `active=False` and `end_date=today`. Automatically gathers all pending and completed undeducted repair costs logged during the tenancy, plus any new move-out repairs submitted in the request payload (`repair_cost` or `repairs` array). Deducts all repairs directly from the remaining deposit (`current_deposit_balance`), marks the repairs as `deducted_from_deposit=True`, and calculates the net deposit refund (`final_deposit_refund`) and any outstanding balance owed (`amount_owed_by_customer`).
+- **Endpoint:** `POST /api/leases/{id}/terminate/` (also available via `POST /api/leases/{id}/leave-room/` and `POST /api/customers/{id}/leave-room/`)
+- **Summary:** Ends an active lease when a tenant vacates (`active=False`). Records any submitted special move-out repairs separately as `MoveOutRepair` records (`move_out_repair_cost` / `move_out_repair_description` / `move_out_repairs`, with legacy aliases `repair_cost` / `repair_description` / `repairs` also recorded as `MoveOutRepair`), gathers any pre-existing undeducted `MoveOutRepair` and `RoomRepair` entries, deducts all repairs from `current_deposit_balance`, refunds the remainder (`final_deposit_refund`), and returns complete closing `bill_data` (including `move_out_repair_cost`, `room_repair_cost`, `move_out_repairs`, `latest_bill`, `unpaid_bills`, `unpaid_electricity_bills`, and `unpaid_water_bills`).
 - **Example Request:**
   ```http
   POST /api/leases/1/terminate/ HTTP/1.1
@@ -1025,8 +1037,8 @@ Authorization: Bearer <access_token>
   Content-Type: application/json
 
   {
-    "repair_cost": 2500.00,
-    "repair_description": "Wall repainting and lock replacement"
+    "move_out_repair_cost": 2500.00,
+    "move_out_repair_description": "Wall repainting and lock replacement"
   }
   ```
 - **Example Request with multiple repairs:**
@@ -1037,7 +1049,7 @@ Authorization: Bearer <access_token>
   Content-Type: application/json
 
   {
-    "repairs": [
+    "move_out_repairs": [
       { "cost": 1500.00, "description": "Door latch repair" },
       { "cost": 2000.00, "description": "Balcony cleaning and painting" }
     ]
@@ -1050,33 +1062,94 @@ Authorization: Bearer <access_token>
 
   {
     "message": "Lease terminated.",
+    "termination_type": "terminated",
     "lease_id": 1,
+    "lease_end_date": "2026-10-11",
     "room_number": "101",
     "customer_id": 1,
     "customer_name": "John Doe",
     "deposit_before_repairs": "45000.00",
+    "move_out_repair_cost": "1300.00",
+    "regular_room_repair_cost": "1200.00",
     "total_repairs_deducted": "2500.00",
     "final_deposit_refund": "42500.00",
     "amount_owed_by_customer": "0.00",
     "current_deposit_balance": "42500.00",
-    "deducted_repairs": [
+    "move_out_repairs": [
+      {
+        "id": 1,
+        "lease": 1,
+        "bill": 8,
+        "room_number": "101",
+        "customer_name": "John Doe",
+        "description": "Wall repainting and lock replacement",
+        "cost": "1300.00",
+        "date_recorded": "2026-10-11",
+        "deducted_from_deposit": true
+      }
+    ],
+    "regular_room_repairs": [
       {
         "id": 1,
         "description": "Fix leaking bathroom faucet",
         "cost": "1200.00",
         "date_logged": "2026-10-05",
         "status": "completed"
-      },
+      }
+    ],
+    "deducted_repairs": [
       {
-        "id": 2,
+        "id": 1,
         "description": "Wall repainting and lock replacement",
         "cost": "1300.00",
-        "date_logged": "2026-10-11",
+        "repair_category": "move_out_repair",
+        "date_recorded": "2026-10-11"
+      },
+      {
+        "id": 1,
+        "description": "Fix leaking bathroom faucet",
+        "cost": "1200.00",
+        "repair_category": "room_repair",
+        "date_logged": "2026-10-05",
         "status": "completed"
       }
-    ]
+    ],
+    "bill_data": {
+      "lease_id": 1,
+      "termination_type": "terminated",
+      "lease_start_date": "2026-01-01",
+      "lease_end_date": "2026-10-11",
+      "move_out_repair_cost": "1300.00",
+      "regular_room_repair_cost": "1200.00",
+      "room_repair_cost": "2500.00",
+      "deposit_before_repairs": "45000.00",
+      "total_repairs_deducted": "2500.00",
+      "deposit_refund": "42500.00",
+      "final_deposit_refund": "42500.00",
+      "amount_owed_by_customer": "0.00",
+      "payable_to_property_manager": "0.00",
+      "payable_to_electricity_supplier": "0.00",
+      "payable_to_water_supplier": "0.00",
+      "total_outstanding_fee": "0.00",
+      "latest_bill": { "...": "BillDetailSerializer including move_out_repair_cost, room_repair_cost, move_out_repairs, deposit_refund_at_end_date" },
+      "unpaid_bills": [],
+      "unpaid_electricity_bills": [],
+      "unpaid_water_bills": []
+    }
   }
   ```
+
+### 6.8 End Lease When End Date Reached
+- **Endpoint:** `POST /api/leases/{id}/end-lease/` (alias: `POST /api/leases/{id}/complete/`)
+- **Summary:** Ends an active lease whose `end_date` has arrived (`end_date <= as_of_date`, where optional `as_of_date` defaults to today; pass `"force": true` to override). Records any submitted `MoveOutRepair` costs separately, deducts them from `current_deposit_balance`, refunds the remaining deposit, and returns the same full `bill_data` payload with `termination_type: "end_date_reached"`.
+
+### 6.9 Batch Process Ended Leases
+- **Endpoint:** `POST /api/leases/process-ended/` (alias: `POST /api/leases/end-expired/`)
+- **Summary:** Finds all active leases with `end_date <= as_of_date` (default today), optionally accepts `"lease_repairs": [{ "lease_id": 1, "move_out_repair_cost": "2500.00", "move_out_repair_description": "..." }]`, closes each expired lease, deducts repairs from deposit, and returns `{ "as_of_date", "ended_count", "ended_leases": [ ...with bill_data... ] }`.
+
+### 6.10 Move-Out Special Room Repairs Resource (Separate from `/api/repairs/`)
+- **Endpoints:** `GET/POST/PUT/PATCH/DELETE /api/move-out-repairs/` (`?lease_id=&room_id=&deducted_from_deposit=`) and `GET /api/reports/move-out-repairs/`
+- **Summary:** Manages special move-out room repairs separately from regular maintenance `RoomRepair` entries (`/api/repairs/`). Un-deducted entries (`deducted_from_deposit=false`) are automatically deducted when the lease ends or is terminated; pass `"deduct_from_deposit": true` to deduct immediately on creation.
 
 ---
 
@@ -1129,7 +1202,7 @@ Electricity and water records are completely separate resources with independent
 
 ### 8.4 Enter Monthly Building Electricity Bill & Calculate Room Rates
 - **Endpoint:** `POST /api/electricity/building-bill/` (and `POST /api/building-electricity/`)
-- **Summary:** Enters `total_electricity_bill`, optional `supplier_electricity_units`, each room's `electricity_meter_reading` in `room_readings`, and optional `custom_rates`.
+- **Summary:** Enters exact `billing_date` (`YYYY-MM-DD`, no time; `billing_month` is automatically derived from `billing_date.replace(day=1)`), `total_electricity_bill`, optional `supplier_electricity_units`, each room's `electricity_meter_reading` in `room_readings`, and optional `custom_rates`. Electricity bills do **not** have a `due_date`.
   - Automatically calculates `default_electricity_unit_price = total_electricity_bill / sum(room_electricity_units)` and `electricity_units_difference = supplier_electricity_units - total_electricity_units`.
   - Automatically applies `room.electricity_credit_balance` only (`receipt_reference="ADVANCE-ELECTRICITY-CREDIT"`).
 - **Example Request:**
@@ -1140,10 +1213,9 @@ Electricity and water records are completely separate resources with independent
   Content-Type: application/json
 
   {
-    "billing_month": "2026-10-01",
+    "billing_date": "2026-10-18",
     "total_electricity_bill": 24000.00,
     "supplier_electricity_units": 215.00,
-    "due_date": "2026-10-28",
     "room_readings": [
       { "room_number": "101", "electricity_meter_reading": 1060.00 },
       { "room_number": "102", "electricity_meter_reading": 2080.00, "electricity_unit_price": 135.00 }
@@ -1153,7 +1225,7 @@ Electricity and water records are completely separate resources with independent
 
 ### 8.5 Enter Monthly Building Water Bill & Calculate Room Rates
 - **Endpoint:** `POST /api/water/building-bill/` (and `POST /api/building-water/`)
-- **Summary:** Enters `total_water_bill`, optional `supplier_water_units`, each room's `water_meter_reading` in `room_readings`, and optional `custom_rates`.
+- **Summary:** Enters exact `billing_date` (`YYYY-MM-DD`, no time; `billing_month` is automatically derived from `billing_date.replace(day=1)`), `total_water_bill`, optional `supplier_water_units`, each room's `water_meter_reading` in `room_readings`, and optional `custom_rates`. Water bills do **not** have a `due_date`.
   - Automatically calculates `default_water_unit_price = total_water_bill / sum(room_water_units)` and `water_units_difference = supplier_water_units - total_water_units`.
   - Automatically applies `room.water_credit_balance` only (`receipt_reference="ADVANCE-WATER-CREDIT"`).
 - **Example Request:**
@@ -1164,10 +1236,9 @@ Electricity and water records are completely separate resources with independent
   Content-Type: application/json
 
   {
-    "billing_month": "2026-10-01",
+    "billing_date": "2026-10-19",
     "total_water_bill": 12000.00,
     "supplier_water_units": 108.00,
-    "due_date": "2026-10-28",
     "room_readings": [
       { "room_number": "101", "water_meter_reading": 530.00 },
       { "room_number": "102", "water_meter_reading": 840.00 }
@@ -1199,21 +1270,31 @@ All three payment streams are strictly separate:
 - **Water Payments (Water Supplier):** `POST /api/water/{id}/record-payment/` or `POST /api/water-payments/` (`WaterPayment`, `Room.water_credit_balance`)
 
 ### 9.1 Record Electricity Payment & Overpayment Credit
-- **Endpoint:** `POST /api/electricity/{id}/record-payment/` (and `GET/POST /api/electricity-payments/`)
-- **Summary:** Records a payment made directly to the electricity supplier. Any excess above the remaining electricity bill is added strictly to `room.electricity_credit_balance` and automatically deducts from future electricity bills only.
+- **Endpoints:**
+  - `POST /api/electricity/{id}/record-payment/`
+  - `POST /api/electricity/record-payment/` (room-level payment; accepts `room_id`, `room`, or `room_number`)
+  - `GET/POST /api/electricity-payments/`
+- **Summary:** Records a payment made directly to the electricity supplier.
+  - **FIFO Oldest-Unpaid-First Allocation:** Payments always settle the room's **oldest unpaid electricity bills first** (`billing_month ASC`), regardless of which month's record was targeted. For example, if Jan = `10,000`, Feb = `10,000`, Mar = `5,000` are unpaid and the customer pays `5,000`, all `5,000` is applied to Jan (`5,000` left on Jan).
+  - **Cascading Overpayment Credit:** If `amount_paid` exceeds the oldest unpaid bill, the remainder cascades chronologically across subsequent unpaid electricity bills, and any leftover excess is added strictly to `room.electricity_credit_balance` to auto-deduct from future electricity bills only.
+  - Response includes `payment`, `payments`, `allocations`, `excess_credit_added`, and `room_electricity_credit_balance`.
 
 ### 9.2 Record Water Payment & Overpayment Credit
-- **Endpoint:** `POST /api/water/{id}/record-payment/` (and `GET/POST /api/water-payments/`)
-- **Summary:** Records a payment made directly to the water supplier. Any excess above the remaining water bill is added strictly to `room.water_credit_balance` and automatically deducts from future water bills only.
-- **Example (Overpaying Water Bill):**
-  - If Rent = `30,000.00`, Electricity = `10,000.00`, Water = `5,000.00` (`gross_total_fee = 45,000.00`), and customer pays `10,000.00` on the water bill:
-  - `excess_credit_added = 5000.00` goes to `room.water_credit_balance`.
-  - Current month `total_fee` remaining across all 3 recipients becomes `40,000.00` (`30,000` rent + `10,000` electricity + `0` water).
-  - Next month's `5,000.00` water bill is automatically paid from `room.water_credit_balance`, leaving `10,000.00` electricity and `30,000.00` rent unaffected.
+- **Endpoints:**
+  - `POST /api/water/{id}/record-payment/`
+  - `POST /api/water/record-payment/` (room-level payment; accepts `room_id`, `room`, or `room_number`)
+  - `GET/POST /api/water-payments/`
+- **Summary:** Records a payment made directly to the water supplier.
+  - **FIFO Oldest-Unpaid-First Allocation:** Payments always settle the room's **oldest unpaid water bills first** (`billing_month ASC`).
+  - **Cascading Overpayment Credit:** Any excess above all existing unpaid water bills is added strictly to `room.water_credit_balance` and automatically deducts from future water bills only.
+  - Response includes `payment`, `payments`, `allocations`, `excess_credit_added`, and `room_water_credit_balance`.
+- **Examples:**
+  - *Split-recipient overpayment:* If Rent = `30,000.00`, Electricity = `10,000.00`, Water = `5,000.00` (`gross_total_fee = 45,000.00`), and customer pays `10,000.00` on the water bill, `excess_credit_added = 5000.00` goes to `room.water_credit_balance`, current month `total_fee` remaining drops to `40,000.00`, and next month's `5,000.00` water bill is automatically paid from `room.water_credit_balance`.
+  - *Multi-month cascade:* If Jan = `10,000.00` and customer pays `25,000.00` in Jan, Jan is paid (`10,000`), `15,000.00` goes to credit, Feb (`10,000.00`) automatically takes `10,000.00` (`5,000.00` credit left), and Mar (`7,500.00`) automatically takes `5,000.00` (leaving `2,500.00` payable for Mar).
 
 ### 9.3 Manually Apply Advance Credit
-- **Electricity:** `POST /api/electricity/{id}/apply-credit/`
-- **Water:** `POST /api/water/{id}/apply-credit/`
+- **Electricity:** `POST /api/electricity/{id}/apply-credit/` (applies available `room.electricity_credit_balance` in oldest-unpaid-first FIFO order)
+- **Water:** `POST /api/water/{id}/apply-credit/` (applies available `room.water_credit_balance` in oldest-unpaid-first FIFO order)
 
 ### 9.4 Building Bills Overview
 - **Electricity:** `GET /api/building-electricity/`
@@ -1255,7 +1336,16 @@ All three payment streams are strictly separate:
       "deposit_remaining": "50000.00",
       "total_amount_due": "30000.00",
       "overpayment_credited": "0.00",
-      "due_date": "2026-10-05",
+      "lease_start_date": "2026-01-10",
+      "lease_end_date": "2026-12-10",
+      "due_date": "2026-10-10",
+      "room_payment_due_date": "2026-10-10",
+      "is_overdue": false,
+      "days_overdue": 0,
+      "payment_status": "unpaid",
+      "remaining_months_until_end_date": 1,
+      "remaining_deposit_deductions_until_end_date": "0.00",
+      "deposit_refund_at_end_date": "50000.00",
       "is_paid": false,
       "created_at": "2026-10-01T06:00:00Z"
     }
@@ -1269,6 +1359,8 @@ All three payment streams are strictly separate:
 ### 10.3 Retrieve Bill Details
 - **Endpoint:** `GET /api/bills/{id}/`
 - **Summary:** Retrieves comprehensive bill details (using `BillDetailSerializer`). Automatically embeds:
+  - `lease_start_date`, `lease_end_date`, `room_payment_due_date` (`due_date`), `is_overdue`, `days_overdue`, and `payment_status`.
+  - Projected deposit refund at lease end date: `remaining_months_until_end_date`, `remaining_deposit_deductions_until_end_date`, and `deposit_refund_at_end_date`.
   - `customer`: Full customer profile and contact numbers.
   - `room`: Room configuration details (including separate `electricity_credit_balance` and `water_credit_balance`).
   - `previous_electricity_records`: `ElectricityRecord` entries from the previous 2 billing months.
@@ -1283,7 +1375,7 @@ All three payment streams are strictly separate:
   - `total_amount_due` is set strictly to `lease.rent_fee - deposit_deducted` (room fee payable to the property manager).
   - Pulls `electricity_cost` from `ElectricityRecord` and `water_cost` from `WaterRecord` for informational display and `gross_total_fee` / `total_fee` calculation.
   - Automatically applies `lease.rent_credit_balance` strictly to the room fee.
-  - Sets `due_date` automatically to the 5th of that month.
+  - Sets `due_date` (`room_payment_due_date`) automatically to the day of `lease.start_date` in `billing_month` (clamped for shorter months). Unpaid bills past `due_date` become overdue (`is_overdue: true`, `payment_status: "overdue"`), while payments after `due_date` remain allowed.
 
 ---
 
@@ -1444,7 +1536,7 @@ All three payment streams are strictly separate:
 
 ### 11.7 Get Overdue Payments
 - **Endpoint:** `GET /api/payments/overdue/`
-- **Summary:** Scans all unpaid bills where `due_date < today`. Returns customer name, room number, due date, number of days overdue, and outstanding owed amount.
+- **Summary:** Scans all unpaid room fee bills where `due_date < today` (`due_date` matches the lease `start_date` day-of-month). Returns customer name, room number, due date, number of days overdue, and outstanding owed amount. Late payments after the due date remain allowed.
 - **Example Request:**
   ```http
   GET /api/payments/overdue/ HTTP/1.1

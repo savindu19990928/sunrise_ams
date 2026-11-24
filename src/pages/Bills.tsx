@@ -30,6 +30,7 @@ import { SearchInput } from '../components/ui/SearchInput';
 import { type BillPdfSources, buildBillBundle, downloadBillPdf, downloadBillsPdf } from '../utils/billPdf';
 import { firstOfCurrentMonth, formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from '../utils/format';
 import {
+  billDueDate,
   billElectricityRemaining,
   billOutstanding,
   billRentDue,
@@ -37,7 +38,12 @@ import {
   billWaterRemaining
 } from '../utils/lookup';
 
-const statusTone: Record<string, BadgeTone> = { paid: 'success', partial: 'warn', unpaid: 'danger' };
+const statusTone: Record<string, BadgeTone> = {
+  paid: 'success',
+  partial: 'warn',
+  unpaid: 'danger',
+  overdue: 'danger'
+};
 
 export function Bills() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -159,8 +165,17 @@ export function Bills() {
     },
     {
       key: 'due',
-      header: 'Due date',
-      render: (bill) => <span className="whitespace-nowrap text-ink-muted">{formatDate(bill.due_date)}</span>
+      header: 'Room payment due',
+      render: (bill) => (
+        <span className="whitespace-nowrap">
+          <span className="block text-ink-muted">{formatDate(billDueDate(bill))}</span>
+          {bill.is_overdue && billOutstanding(bill) > 0 && (
+            <span className="block text-[11px] font-medium text-danger-600">
+              {bill.days_overdue ?? 0}d overdue
+            </span>
+          )}
+        </span>
+      )
     },
     {
       key: 'total',
@@ -228,6 +243,24 @@ export function Bills() {
       render: (bill) => {
         const value = billOutstanding(bill);
         return <span className={value > 0 ? 'font-medium text-danger-600' : 'text-success-600'}>{formatCurrency(value)}</span>;
+      }
+    },
+    {
+      key: 'end_refund',
+      header: 'Est. end refund',
+      align: 'right',
+      render: (bill) => {
+        const hasRefund = bill.deposit_refund_at_end_date !== undefined && bill.deposit_refund_at_end_date !== null;
+        return (
+          <span className="whitespace-nowrap">
+            <span className="block font-medium text-ink">
+              {hasRefund ? formatCurrency(bill.deposit_refund_at_end_date) : '—'}
+            </span>
+            {bill.lease_end_date && (
+              <span className="block text-[11px] text-ink-soft">Ends {formatDate(bill.lease_end_date)}</span>
+            )}
+          </span>
+        );
       }
     },
     {
@@ -315,6 +348,7 @@ export function Bills() {
                 <Select id="bills_status" value={status} onChange={(event) => setStatus(event.target.value)}>
                   <option value="all">All</option>
                   <option value="unpaid">Unpaid</option>
+                  <option value="overdue">Overdue</option>
                   <option value="partial">Partial</option>
                   <option value="paid">Paid</option>
                 </Select>

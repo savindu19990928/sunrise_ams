@@ -8,12 +8,16 @@ export function useAction(onDone?: () => void) {
   const [error, setError] = useState<ApiError | null>(null);
 
   const run = useCallback(
-    async <R,>(path: string, body: Record<string, unknown>, successMessage: string): Promise<R | null> => {
+    async <R,>(
+      path: string,
+      body: Record<string, unknown>,
+      successMessage: string | ((result: R) => string)
+    ): Promise<R | null> => {
       setPending(true);
       setError(null);
       try {
         const result = await apiRequest<R>(path, { method: 'POST', body });
-        toast.success(successMessage);
+        toast.success(typeof successMessage === 'function' ? successMessage(result) : successMessage);
         onDone?.();
         return result;
       } catch (err) {

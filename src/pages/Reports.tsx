@@ -71,17 +71,18 @@ const reports: ReportDefinition[] = [
   {
     type: 'unpaid-room-fee-bills',
     label: 'Unpaid room fee bills',
-    description: 'All unpaid room fee bills across all customers with remaining balances.'
+    description:
+      'All unpaid room fee bills with lease-start due dates, overdue status, and expected deposit refund at end date.'
   },
   {
     type: 'unpaid-electricity-bills',
     label: 'Unpaid electricity bills',
-    description: 'All unpaid electricity bills across all customers with remaining balances.'
+    description: 'All unpaid electricity bills across all rooms with exact billing dates and remaining balances.'
   },
   {
     type: 'unpaid-water-bills',
     label: 'Unpaid water bills',
-    description: 'All unpaid water bills across all customers with remaining balances.'
+    description: 'All unpaid water bills across all rooms with exact billing dates and remaining balances.'
   },
   {
     type: 'recorrection-logs',
@@ -107,7 +108,12 @@ const reports: ReportDefinition[] = [
   {
     type: 'room-repairs',
     label: 'Room repairs',
-    description: 'Repair costs broken down by room.'
+    description: 'Regular tenancy room maintenance repair costs broken down by room.'
+  },
+  {
+    type: 'move-out-repairs',
+    label: 'Move-out special repairs',
+    description: 'Special move-out room repair costs recorded separately when tenants leave.'
   },
   {
     type: 'electricity-payments',
@@ -131,6 +137,7 @@ function findRows(payload: unknown): ReportRow[] {
   for (const key of [
     'results',
     'payments',
+    'move_out_repairs',
     'unpaid_bills',
     'unpaid_electricity_bills',
     'unpaid_water_bills',
@@ -307,7 +314,9 @@ export function Reports() {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
     const record = data as Record<string, unknown>;
     const recipient = typeof record.payment_recipient === 'string' ? record.payment_recipient : null;
-    const countKey = ['payments_count', 'unpaid_count', 'logs_count'].find((k) => typeof record[k] === 'number');
+    const countKey = ['payments_count', 'unpaid_count', 'logs_count', 'repairs_count'].find(
+      (k) => typeof record[k] === 'number'
+    );
     const count = countKey ? (record[countKey] as number) : null;
     return recipient || count !== null ? { recipient, count } : null;
   }, [data]);

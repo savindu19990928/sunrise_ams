@@ -94,8 +94,8 @@ export function BuildingBillSummary({
         <dd className="text-right font-medium text-ink">{roomsRecorded}</dd>
         <dt className="text-ink-muted">Room bills total</dt>
         <dd className="whitespace-nowrap text-right font-medium text-ink">{formatCurrency(totalRoomsCost)}</dd>
-        <dt className="text-ink-muted">{config.supplierShort} due</dt>
-        <dd className="whitespace-nowrap text-right font-medium text-ink">{formatDate(bill.due_date)}</dd>
+        <dt className="text-ink-muted">Billing date</dt>
+        <dd className="whitespace-nowrap text-right font-medium text-ink">{formatDate(bill.billing_date || bill.billing_month)}</dd>
       </dl>
     </section>
   );

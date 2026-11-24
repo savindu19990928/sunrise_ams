@@ -3,7 +3,7 @@ import { ChevronDownIcon, ChevronUpIcon, SparklesIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ID, Lease, NormalizedMonthlyServiceSummary, Room } from '../../types';
 import { ApiError, apiRequest, buildQuery } from '../../utils/api';
-import { firstOfCurrentMonth, formatCurrency, formatMonth, monthInputValue, toNumber } from '../../utils/format';
+import { formatCurrency, formatDate, formatMonth, toNumber, today } from '../../utils/format';
 import { notifyRemindersChanged } from '../../utils/reminders';
 import { extractMonthlySummary, extractPreviousReadings, SERVICE_CONFIG } from '../../utils/serviceRecords';
 import { formatDifference, formatPerDay, formatUnits, usageDifference } from '../../utils/utilityUsage';
@@ -51,8 +51,8 @@ function DifferenceLine({ supplier, meters, difference }: { supplier: string; me
 
 export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: CombinedUtilityBillFormProps) {
   const [expanded, setExpanded] = useState(true);
-  const [month, setMonth] = useState(monthInputValue(firstOfCurrentMonth()));
-  const [dueDate, setDueDate] = useState(() => `${monthInputValue(firstOfCurrentMonth())}-28`);
+  const [electricityBillingDate, setElectricityBillingDate] = useState(today());
+  const [waterBillingDate, setWaterBillingDate] = useState(today());
   const [electricityBill, setElectricityBill] = useState('');
   const [supplierElectricityUnits, setSupplierElectricityUnits] = useState('');
   const [waterBill, setWaterBill] = useState('');
@@ -64,139 +64,188 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
   const [prevMap, setPrevMap] = useState<Record<string, { elec: number; water: number; }>>({});
   const [existingElec, setExistingElec] = useState<NormalizedMonthlyServiceSummary | null>(null);
   const [existingWater, setExistingWater] = useState<NormalizedMonthlyServiceSummary | null>(null);
-  const [loadingMonth, setLoadingMonth] = useState(false);
+  const [loadingElec, setLoadingElec] = useState(false);
+  const [loadingWater, setLoadingWater] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
+  const elecMonth = /^\d{4}-\d{2}-\d{2}$/.test(electricityBillingDate) ? electricityBillingDate.slice(0, 7) : '';
+  const waterMonth = /^\d{4}-\d{2}-\d{2}$/.test(waterBillingDate) ? waterBillingDate.slice(0, 7) : '';
+  const loadingMonth = loadingElec || loadingWater;
+
   useEffect(() => {
-    if (!month || !/^\d{4}-\d{2}$/.test(month)) return;
+    if (!elecMonth || !/^\d{4}-\d{2}$/.test(elecMonth)) return;
     const controller = new AbortController();
-    setLoadingMonth(true);
+    setLoadingElec(true);
     setError(null);
     setTouched(false);
 
     const elecConfig = SERVICE_CONFIG.electricity;
-    const waterConfig = SERVICE_CONFIG.water;
 
     const elecSummaryPromise = apiRequest<unknown>(
-      `${elecConfig.monthlySummaryPath}${buildQuery({ billing_month: month })}`,
+      `${elecConfig.monthlySummaryPath}${buildQuery({ billing_month: elecMonth })}`,
       { signal: controller.signal }
     )
       .then((raw) => extractMonthlySummary('electricity', raw))
       .catch(() => null);
 
-    const waterSummaryPromise = apiRequest<unknown>(
-      `${waterConfig.monthlySummaryPath}${buildQuery({ billing_month: month })}`,
-      { signal: controller.signal }
-    )
-      .then((raw) => extractMonthlySummary('water', raw))
-      .catch(() => null);
-
     const elecPrevPromise = apiRequest<unknown>(
-      `${elecConfig.previousReadingsPath}${buildQuery({ billing_month: month })}`,
+      `${elecConfig.previousReadingsPath}${buildQuery({ billing_month: elecMonth })}`,
       { signal: controller.signal }
     )
       .then((raw) => extractPreviousReadings('electricity', raw))
       .catch(() => []);
 
-    const waterPrevPromise = apiRequest<unknown>(
-      `${waterConfig.previousReadingsPath}${buildQuery({ billing_month: month })}`,
-      { signal: controller.signal }
-    )
-      .then((raw) => extractPreviousReadings('water', raw))
-      .catch(() => []);
-
-    Promise.all([elecSummaryPromise, waterSummaryPromise, elecPrevPromise, waterPrevPromise])
-      .then(([elecSummary, waterSummary, elecPrevList, waterPrevList]) => {
+    Promise.all([elecSummaryPromise, elecPrevPromise])
+      .then(([elecSummary, elecPrevList]) => {
         if (controller.signal.aborted) return;
 
         setExistingElec(elecSummary);
-        setExistingWater(waterSummary);
-
         const elecBill = elecSummary?.building_bill ?? null;
-        const wBill = waterSummary?.building_bill ?? null;
-
         setElectricityBill(elecBill ? String(toNumber(elecBill.total_bill)) : '');
         setSupplierElectricityUnits(
           elecBill?.supplier_units !== undefined && elecBill?.supplier_units !== null
             ? String(toNumber(elecBill.supplier_units))
             : ''
         );
+        setReason('');
+
+        const byRoom = new Map((elecSummary?.rows ?? []).map((r) => [String(r.room_id), r]));
+        setReadings((prev) => {
+          const next: Record<string, RoomReadingDraft> = {};
+          const keys = new Set([...Object.keys(prev), ...Array.from(byRoom.keys())]);
+          for (const key of keys) {
+            const existingDraft = prev[key] ?? emptyDraft;
+            const row = byRoom.get(key);
+            const hasCustom = Boolean(
+              row && elecBill && row.unit_price !== null && toNumber(row.unit_price) !== toNumber(elecBill.unit_price)
+            );
+            const hasWaterCustom = existingDraft.customWaterRate !== '';
+            next[key] = {
+              ...existingDraft,
+              currElectricity: row ? asReadingString(row.meter_reading) : '',
+              customElectricityRate: hasCustom && row ? asReadingString(row.unit_price) : '',
+              customRateEnabled: hasCustom || hasWaterCustom
+            };
+          }
+          return next;
+        });
+
+        setPrevMap((prev) => {
+          const next = { ...prev };
+          const seen = new Set<string>();
+          for (const row of elecSummary?.rows ?? []) {
+            const key = String(row.room_id);
+            seen.add(key);
+            next[key] = { elec: toNumber(row.previous_meter_reading), water: next[key]?.water ?? 0 };
+          }
+          for (const item of elecPrevList) {
+            const key = String(item.room_id);
+            if (!seen.has(key)) {
+              seen.add(key);
+              next[key] = { elec: toNumber(item.previous_meter_reading), water: next[key]?.water ?? 0 };
+            }
+          }
+          for (const key of Object.keys(next)) {
+            if (!seen.has(key)) next[key] = { elec: 0, water: next[key]?.water ?? 0 };
+          }
+          return next;
+        });
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingElec(false);
+      });
+
+    return () => controller.abort();
+  }, [elecMonth, reloadTick]);
+
+  useEffect(() => {
+    if (!waterMonth || !/^\d{4}-\d{2}$/.test(waterMonth)) return;
+    const controller = new AbortController();
+    setLoadingWater(true);
+    setError(null);
+    setTouched(false);
+
+    const waterConfig = SERVICE_CONFIG.water;
+
+    const waterSummaryPromise = apiRequest<unknown>(
+      `${waterConfig.monthlySummaryPath}${buildQuery({ billing_month: waterMonth })}`,
+      { signal: controller.signal }
+    )
+      .then((raw) => extractMonthlySummary('water', raw))
+      .catch(() => null);
+
+    const waterPrevPromise = apiRequest<unknown>(
+      `${waterConfig.previousReadingsPath}${buildQuery({ billing_month: waterMonth })}`,
+      { signal: controller.signal }
+    )
+      .then((raw) => extractPreviousReadings('water', raw))
+      .catch(() => []);
+
+    Promise.all([waterSummaryPromise, waterPrevPromise])
+      .then(([waterSummary, waterPrevList]) => {
+        if (controller.signal.aborted) return;
+
+        setExistingWater(waterSummary);
+        const wBill = waterSummary?.building_bill ?? null;
         setWaterBill(wBill ? String(toNumber(wBill.total_bill)) : '');
         setSupplierWaterUnits(
           wBill?.supplier_units !== undefined && wBill?.supplier_units !== null
             ? String(toNumber(wBill.supplier_units))
             : ''
         );
-        setDueDate(elecBill?.due_date ?? wBill?.due_date ?? `${month}-28`);
         setReason('');
 
-        const nextReadings: Record<string, RoomReadingDraft> = {};
-        const nextPrev: Record<string, { elec: number; water: number; }> = {};
-
-        for (const row of elecSummary?.rows ?? []) {
-          const key = String(row.room_id);
-          const hasCustom = Boolean(elecBill && row.unit_price !== null && toNumber(row.unit_price) !== toNumber(elecBill.unit_price));
-          nextReadings[key] = {
-            ...(nextReadings[key] ?? emptyDraft),
-            currElectricity: asReadingString(row.meter_reading),
-            customRateEnabled: hasCustom || Boolean(nextReadings[key]?.customRateEnabled),
-            customElectricityRate: hasCustom ? asReadingString(row.unit_price) : ''
-          };
-          nextPrev[key] = {
-            elec: toNumber(row.previous_meter_reading),
-            water: nextPrev[key]?.water ?? 0
-          };
-        }
-
-        for (const row of waterSummary?.rows ?? []) {
-          const key = String(row.room_id);
-          const hasCustom = Boolean(wBill && row.unit_price !== null && toNumber(row.unit_price) !== toNumber(wBill.unit_price));
-          nextReadings[key] = {
-            ...(nextReadings[key] ?? emptyDraft),
-            currWater: asReadingString(row.meter_reading),
-            customRateEnabled: hasCustom || Boolean(nextReadings[key]?.customRateEnabled),
-            customWaterRate: hasCustom ? asReadingString(row.unit_price) : ''
-          };
-          nextPrev[key] = {
-            elec: nextPrev[key]?.elec ?? 0,
-            water: toNumber(row.previous_meter_reading)
-          };
-        }
-
-        for (const item of elecPrevList) {
-          const key = String(item.room_id);
-          const hadSummaryElec = elecSummary?.rows.some((r) => String(r.room_id) === key);
-          if (!hadSummaryElec) {
-            nextPrev[key] = {
-              elec: toNumber(item.previous_meter_reading),
-              water: nextPrev[key]?.water ?? 0
+        const byRoom = new Map((waterSummary?.rows ?? []).map((r) => [String(r.room_id), r]));
+        setReadings((prev) => {
+          const next: Record<string, RoomReadingDraft> = {};
+          const keys = new Set([...Object.keys(prev), ...Array.from(byRoom.keys())]);
+          for (const key of keys) {
+            const existingDraft = prev[key] ?? emptyDraft;
+            const row = byRoom.get(key);
+            const hasCustom = Boolean(
+              row && wBill && row.unit_price !== null && toNumber(row.unit_price) !== toNumber(wBill.unit_price)
+            );
+            const hasElecCustom = existingDraft.customElectricityRate !== '';
+            next[key] = {
+              ...existingDraft,
+              currWater: row ? asReadingString(row.meter_reading) : '',
+              customWaterRate: hasCustom && row ? asReadingString(row.unit_price) : '',
+              customRateEnabled: hasCustom || hasElecCustom
             };
           }
-        }
+          return next;
+        });
 
-        for (const item of waterPrevList) {
-          const key = String(item.room_id);
-          const hadSummaryWater = waterSummary?.rows.some((r) => String(r.room_id) === key);
-          if (!hadSummaryWater) {
-            nextPrev[key] = {
-              elec: nextPrev[key]?.elec ?? 0,
-              water: toNumber(item.previous_meter_reading)
-            };
+        setPrevMap((prev) => {
+          const next = { ...prev };
+          const seen = new Set<string>();
+          for (const row of waterSummary?.rows ?? []) {
+            const key = String(row.room_id);
+            seen.add(key);
+            next[key] = { elec: next[key]?.elec ?? 0, water: toNumber(row.previous_meter_reading) };
           }
-        }
-
-        setReadings(nextReadings);
-        setPrevMap(nextPrev);
+          for (const item of waterPrevList) {
+            const key = String(item.room_id);
+            if (!seen.has(key)) {
+              seen.add(key);
+              next[key] = { elec: next[key]?.elec ?? 0, water: toNumber(item.previous_meter_reading) };
+            }
+          }
+          for (const key of Object.keys(next)) {
+            if (!seen.has(key)) next[key] = { elec: next[key]?.elec ?? 0, water: 0 };
+          }
+          return next;
+        });
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoadingMonth(false);
+        if (!controller.signal.aborted) setLoadingWater(false);
       });
 
     return () => controller.abort();
-  }, [month, reloadTick]);
+  }, [waterMonth, reloadTick]);
 
   const occupiedRoomIds = useMemo(
     () => new Set<ID>(leases.filter((lease) => lease.is_active).map((lease) => lease.room)),
@@ -297,7 +346,8 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
     setError(null);
 
     if (
-      !month ||
+      !elecMonth ||
+      !waterMonth ||
       billError(electricityBill) ||
       billError(waterBill) ||
       optionalReadingError(supplierElectricityUnits) ||
@@ -311,7 +361,10 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
       return;
     }
 
-    const billingMonth = `${month}-01`;
+    const elecBillingMonth = `${elecMonth}-01`;
+    const waterBillingMonth = `${waterMonth}-01`;
+    const rentBillingMonth = `${(elecMonth || waterMonth)}-01`;
+
     const elecReadings = sortedRooms
       .filter((room) => roomCalculations.map.get(room.id)?.hasElec)
       .map((room) => {
@@ -340,23 +393,21 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
         return entry;
       });
 
-    const commonReason = hasExisting && reason.trim() ? { reason: reason.trim() } : {};
+    const trimmedReason = reason.trim();
 
     const elecPayload: Record<string, unknown> = {
-      billing_month: billingMonth,
+      billing_date: electricityBillingDate,
       total_electricity_bill: toNumber(electricityBill),
-      due_date: dueDate || undefined,
       ...(supplierElectricityUnits !== '' ? { supplier_electricity_units: toNumber(supplierElectricityUnits) } : {}),
-      ...commonReason,
+      ...(existingElec?.building_bill && trimmedReason ? { reason: trimmedReason } : {}),
       room_readings: elecReadings
     };
 
     const waterPayload: Record<string, unknown> = {
-      billing_month: billingMonth,
+      billing_date: waterBillingDate,
       total_water_bill: toNumber(waterBill),
-      due_date: dueDate || undefined,
       ...(supplierWaterUnits !== '' ? { supplier_water_units: toNumber(supplierWaterUnits) } : {}),
-      ...commonReason,
+      ...(existingWater?.building_bill && trimmedReason ? { reason: trimmedReason } : {}),
       room_readings: waterReadings
     };
 
@@ -387,7 +438,7 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
         try {
           await apiRequest('/api/bills/generate_monthly/', {
             method: 'POST',
-            body: { billing_month: billingMonth }
+            body: { billing_month: rentBillingMonth }
           });
         } catch (rentErr) {
           const msg = rentErr instanceof ApiError ? rentErr.message : (rentErr as Error).message;
@@ -401,10 +452,15 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
         }
       }
 
+      const periodSummary =
+        elecBillingMonth === waterBillingMonth
+          ? formatMonth(elecBillingMonth)
+          : `${formatMonth(elecBillingMonth)} (elec) & ${formatMonth(waterBillingMonth)} (water)`;
+
       toast.success(
         generateRentBills
-          ? `Electricity, water, and rent bills generated for ${formatMonth(billingMonth)}.`
-          : `Electricity and water bills generated for ${formatMonth(billingMonth)}.`
+          ? `Electricity, water, and rent bills generated for ${periodSummary}.`
+          : `Electricity and water bills generated for ${periodSummary}.`
       );
       setReloadTick((tick) => tick + 1);
       notifyRemindersChanged();
@@ -418,11 +474,18 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
     }
   };
 
+  const existingElecDate = existingElec?.building_bill?.billing_date;
+  const existingWaterDate = existingWater?.building_bill?.billing_date;
+  const readingsHeading =
+    elecMonth && waterMonth && elecMonth !== waterMonth
+      ? `Elec: ${formatMonth(`${elecMonth}-01`)} · Water: ${formatMonth(`${waterMonth}-01`)}`
+      : formatMonth(`${(elecMonth || waterMonth)}-01`);
+
   return (
     <Card>
       <CardHeader
         title="Generate electricity & water bills"
-        description="Enter monthly supplier totals and room meter readings to generate both electricity (LECO) and water (NWSDB) bills at once."
+        description="Enter exact billing dates, supplier totals, and room meter readings to generate both electricity (LECO) and water (NWSDB) bills at once."
         actions={
           <Button
             type="button"
@@ -444,21 +507,23 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-            <Field label="Billing month" htmlFor="dash_bill_month" required>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field
+              label="Electricity billing date"
+              htmlFor="dash_elec_date"
+              required
+              error={touched && !elecMonth ? 'Select electricity billing date.' : undefined}
+              hint={
+                existingElecDate && existingElecDate !== electricityBillingDate
+                  ? `Existing bill dated ${formatDate(existingElecDate)}`
+                  : undefined
+              }
+            >
               <Input
-                id="dash_bill_month"
-                type="month"
-                value={month}
-                onChange={(event) => setMonth(event.target.value)}
-              />
-            </Field>
-            <Field label="Due date" htmlFor="dash_bill_due">
-              <Input
-                id="dash_bill_due"
+                id="dash_elec_date"
                 type="date"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
+                value={electricityBillingDate}
+                onChange={(event) => setElectricityBillingDate(event.target.value)}
               />
             </Field>
             <Field
@@ -490,6 +555,24 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
                 value={supplierElectricityUnits}
                 onChange={(event) => setSupplierElectricityUnits(event.target.value)}
                 placeholder="215"
+              />
+            </Field>
+            <Field
+              label="Water billing date"
+              htmlFor="dash_water_date"
+              required
+              error={touched && !waterMonth ? 'Select water billing date.' : undefined}
+              hint={
+                existingWaterDate && existingWaterDate !== waterBillingDate
+                  ? `Existing bill dated ${formatDate(existingWaterDate)}`
+                  : undefined
+              }
+            >
+              <Input
+                id="dash_water_date"
+                type="date"
+                value={waterBillingDate}
+                onChange={(event) => setWaterBillingDate(event.target.value)}
               />
             </Field>
             <Field
@@ -574,7 +657,7 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
           <div>
             <div className="flex items-baseline justify-between gap-3">
               <h3 className="text-[13px] font-medium text-ink">
-                Room meter readings · {formatMonth(`${month}-01`)}
+                Room meter readings · {readingsHeading}
                 {loadingMonth && <span className="ml-2 text-[12px] font-normal text-ink-soft">Loading…</span>}
               </h3>
             </div>
@@ -655,7 +738,7 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
                               </p>
                             ) : (
                               <p className="mt-0.5 text-[11px] text-ink-muted">
-                                {formatUnits(calc.elecUnits)} units · {formatPerDay(calc.elecUnits, month)}
+                                {formatUnits(calc.elecUnits)} units · {formatPerDay(calc.elecUnits, elecMonth)}
                               </p>
                             )
                           )}
@@ -679,7 +762,7 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
                               </p>
                             ) : (
                               <p className="mt-0.5 text-[11px] text-ink-muted">
-                                {formatUnits(calc.waterUnits)} units · {formatPerDay(calc.waterUnits, month)}
+                                {formatUnits(calc.waterUnits)} units · {formatPerDay(calc.waterUnits, waterMonth)}
                               </p>
                             )
                           )}
@@ -768,7 +851,9 @@ export function CombinedUtilityBillForm({ rooms, leases, onGenerated }: Combined
                 checked={generateRentBills}
                 onChange={(event) => setGenerateRentBills(event.target.checked)}
               />
-              <span>Also generate monthly room rent bills for active leases</span>
+              <span>
+                Also generate {formatMonth(`${(elecMonth || waterMonth)}-01`)} room rent bills for active leases
+              </span>
             </label>
             <Button type="submit" icon={SparklesIcon} loading={pending} disabled={sortedRooms.length === 0}>
               Generate electricity &amp; water bills

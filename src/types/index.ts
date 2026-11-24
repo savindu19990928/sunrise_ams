@@ -82,6 +82,8 @@ export interface Lease {
   current_applicable_deposit_deduction?: number | string;
   /** Calculated by the API: rent_fee − current_applicable_deposit_deduction. */
   effective_rent_fee?: number | string;
+  /** Projected deposit refund once the lease end_date is reached. */
+  expected_deposit_refund_at_end_date?: number | string | null;
   is_active: boolean;
   final_deposit_refund?: number | string | null;
 }
@@ -93,6 +95,7 @@ export interface ElectricityRecord {
   room_type?: string;
   customer_name?: string | null;
   billing_month: string;
+  billing_date?: string | null;
   previous_electricity_meter_reading?: number | string;
   electricity_meter_reading?: number | string;
   electricity_units?: number | string;
@@ -108,7 +111,6 @@ export interface ElectricityRecord {
   electricity_credit_balance?: number | string;
   room_credit_balance?: number | string;
   is_paid?: boolean;
-  due_date?: string | null;
   created_at?: string;
 }
 
@@ -119,6 +121,7 @@ export interface WaterRecord {
   room_type?: string;
   customer_name?: string | null;
   billing_month: string;
+  billing_date?: string | null;
   previous_water_meter_reading?: number | string;
   water_meter_reading?: number | string;
   water_units?: number | string;
@@ -134,30 +137,29 @@ export interface WaterRecord {
   water_credit_balance?: number | string;
   room_credit_balance?: number | string;
   is_paid?: boolean;
-  due_date?: string | null;
   created_at?: string;
 }
 
 export interface BuildingElectricityBill {
   id: ID;
   billing_month: string;
+  billing_date?: string | null;
   total_electricity_bill: number | string;
   total_electricity_units: number | string;
   supplier_electricity_units?: number | string | null;
   electricity_units_difference?: number | string | null;
   electricity_unit_price: number | string;
-  due_date?: string | null;
 }
 
 export interface BuildingWaterBill {
   id: ID;
   billing_month: string;
+  billing_date?: string | null;
   total_water_bill: number | string;
   total_water_units: number | string;
   supplier_water_units?: number | string | null;
   water_units_difference?: number | string | null;
   water_unit_price: number | string;
-  due_date?: string | null;
 }
 
 /** Payment made by the tenant directly to the electricity supplier (CEB) — never business income. */
@@ -199,12 +201,12 @@ export interface WaterPayment {
 export interface NormalizedBuildingServiceBill {
   id: ID;
   billing_month: string;
+  billing_date?: string | null;
   total_bill: number | string;
   total_units: number | string;
   supplier_units?: number | string | null;
   units_difference?: number | string | null;
   unit_price: number | string;
-  due_date?: string | null;
 }
 
 export interface NormalizedServiceRow {
@@ -214,6 +216,7 @@ export interface NormalizedServiceRow {
   room_type?: string;
   customer_name?: string | null;
   billing_month: string;
+  billing_date?: string | null;
   previous_meter_reading?: number | string;
   meter_reading?: number | string;
   units: number | string;
@@ -223,7 +226,28 @@ export interface NormalizedServiceRow {
   remaining_balance?: number | string;
   room_credit_balance?: number | string;
   is_paid: boolean;
-  due_date?: string | null;
+}
+
+export interface ServicePaymentAllocation {
+  record_id?: ID;
+  electricity_record_id?: ID;
+  water_record_id?: ID;
+  billing_month?: string;
+  billing_date?: string | null;
+  applied_amount?: number | string;
+  amount_applied?: number | string;
+  remaining_balance?: number | string;
+  is_paid?: boolean;
+}
+
+export interface ServicePaymentResponse {
+  message?: string;
+  payment?: Record<string, unknown>;
+  payments?: Record<string, unknown>[];
+  allocations?: ServicePaymentAllocation[];
+  excess_credit_added?: number | string;
+  room_electricity_credit_balance?: number | string;
+  room_water_credit_balance?: number | string;
 }
 
 export interface NormalizedMonthlyServiceSummary {
@@ -265,7 +289,7 @@ export interface NormalizedServicePayment {
   created_at?: string;
 }
 
-export type BillStatus = 'unpaid' | 'partial' | 'paid';
+export type BillStatus = 'unpaid' | 'partial' | 'paid' | 'overdue';
 
 export interface Bill {
   id: ID;
@@ -274,6 +298,19 @@ export interface Bill {
   room_number?: string;
   billing_month: string;
   due_date: string;
+  room_payment_due_date?: string | null;
+  lease_start_date?: string | null;
+  lease_end_date?: string | null;
+  is_overdue?: boolean;
+  days_overdue?: number;
+  payment_status?: BillStatus;
+  remaining_months_until_end_date?: number;
+  remaining_deposit_deductions_until_end_date?: number | string;
+  deposit_refund_at_end_date?: number | string | null;
+  move_out_repair_cost?: number | string;
+  regular_room_repair_cost?: number | string;
+  room_repair_cost?: number | string;
+  move_out_repairs?: MoveOutRepair[];
   rent: number;
   electricity: number;
   water: number;
@@ -334,18 +371,83 @@ export interface RoomRepair {
   deducted_from_deposit?: boolean;
 }
 
-/** Response of POST /api/leases/{id}/terminate/ and the leave-room actions. */
-export interface LeaveRoomResult {
-  message?: string;
-  lease_id?: ID;
+/** Special move-out room repairs tracked separately from regular maintenance. */
+export interface MoveOutRepair {
+  id: ID;
+  lease: ID;
+  bill?: ID | null;
   room_number?: string;
   customer_name?: string;
+  description: string;
+  cost: number | string;
+  date_recorded?: string;
+  deducted_from_deposit?: boolean;
+  created_at?: string;
+}
+
+export interface ClosingBillData {
+  lease_id?: ID;
+  termination_type?: 'terminated' | 'end_date_reached' | string;
+  lease_start_date?: string | null;
+  lease_end_date?: string | null;
+  move_out_repair_cost?: number | string;
+  regular_room_repair_cost?: number | string;
+  room_repair_cost?: number | string;
   deposit_before_repairs?: number | string;
+  total_repairs_deducted?: number | string;
+  deposit_refund?: number | string;
+  final_deposit_refund?: number | string;
+  amount_owed_by_customer?: number | string;
+  payable_to_property_manager?: number | string;
+  payable_to_electricity_supplier?: number | string;
+  payable_to_water_supplier?: number | string;
+  total_outstanding_fee?: number | string;
+  latest_bill?: Bill | null;
+  unpaid_bills?: Record<string, unknown>[];
+  unpaid_electricity_bills?: Record<string, unknown>[];
+  unpaid_water_bills?: Record<string, unknown>[];
+}
+
+/** Response of POST /api/leases/{id}/terminate/, end-lease, and leave-room actions. */
+export interface LeaveRoomResult {
+  message?: string;
+  termination_type?: 'terminated' | 'end_date_reached' | string;
+  lease_id?: ID;
+  lease_end_date?: string | null;
+  room_number?: string;
+  customer_id?: ID;
+  customer_name?: string;
+  deposit_before_repairs?: number | string;
+  move_out_repair_cost?: number | string;
+  regular_room_repair_cost?: number | string;
   total_repairs_deducted?: number | string;
   final_deposit_refund?: number | string;
   amount_owed_by_customer?: number | string;
   current_deposit_balance?: number | string;
-  deducted_repairs?: { id: ID; description: string; cost: number | string; date_logged?: string; status?: string; }[];
+  move_out_repairs?: MoveOutRepair[];
+  regular_room_repairs?: {
+    id: ID;
+    description: string;
+    cost: number | string;
+    date_logged?: string;
+    status?: string;
+  }[];
+  deducted_repairs?: {
+    id: ID;
+    description: string;
+    cost: number | string;
+    repair_category?: 'move_out_repair' | 'room_repair' | string;
+    date_logged?: string;
+    date_recorded?: string;
+    status?: string;
+  }[];
+  bill_data?: ClosingBillData;
+}
+
+export interface ProcessEndedLeasesResult {
+  as_of_date?: string;
+  ended_count?: number;
+  ended_leases?: LeaveRoomResult[];
 }
 
 export interface OverduePayment {
@@ -394,6 +496,7 @@ export type ReportType =
   'all-payments' |
   'this-month-charges' |
   'room-repairs' |
+  'move-out-repairs' |
   'profits' |
   'electricity-payments' |
   'water-payments';

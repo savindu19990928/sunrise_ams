@@ -85,15 +85,31 @@ export function billOutstanding(bill: Bill): number {
   return Math.max(0, billRentDue(bill) - Number(bill.amount_paid ?? 0));
 }
 
+/** Effective room rent payment due date (lease start day in the billing month). */
+export function billDueDate(bill: Bill): string {
+  return bill.room_payment_due_date || bill.due_date || '';
+}
+
 /**
  * Bills are not guaranteed to carry a `status` field — derive it from the
- * amounts whenever the API omits it so the UI never reads an undefined value.
+ * API status / overdue flag / amounts so the UI never reads an undefined value.
  */
 export function billStatus(bill: Bill): BillStatus {
-  if (bill.status === 'paid' || bill.status === 'partial' || bill.status === 'unpaid') return bill.status;
+  if (
+    bill.payment_status === 'paid' ||
+    bill.payment_status === 'partial' ||
+    bill.payment_status === 'unpaid' ||
+    bill.payment_status === 'overdue'
+  ) {
+    return bill.payment_status;
+  }
+  if (bill.status === 'paid' || bill.status === 'partial' || bill.status === 'unpaid' || bill.status === 'overdue') {
+    return bill.status;
+  }
   const total = billRentDue(bill);
   const paid = Number(bill.amount_paid ?? 0);
   if (total > 0 && paid >= total) return 'paid';
+  if (bill.is_overdue) return 'overdue';
   if (paid > 0) return 'partial';
   return 'unpaid';
 }

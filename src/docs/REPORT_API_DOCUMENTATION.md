@@ -207,7 +207,7 @@ Every `/api/reports/<report_type>/` endpoint supports:
 `GET /api/reports/unpaid-electricity-bills/`  
 *(Alias: `GET /api/reports/all-unpaid-electricity-payments/`)*
 
-Returns all unpaid `ElectricityRecord` entries (`is_paid=False`) in the selected period along with `already_paid` (net applied), `remaining_balance`, and `room_electricity_credit_balance`.
+Returns all unpaid `ElectricityRecord` entries (`is_paid=False`) in the selected period along with `billing_date` (exact `YYYY-MM-DD`, no due date), `already_paid` (net applied), `remaining_balance`, and `room_electricity_credit_balance`.
 
 ---
 
@@ -216,7 +216,7 @@ Returns all unpaid `ElectricityRecord` entries (`is_paid=False`) in the selected
 `GET /api/reports/unpaid-water-bills/`  
 *(Alias: `GET /api/reports/all-unpaid-water-payments/`)*
 
-Returns all unpaid `WaterRecord` entries (`is_paid=False`) in the selected period along with `already_paid` (net applied), `remaining_balance`, and `room_water_credit_balance`.
+Returns all unpaid `WaterRecord` entries (`is_paid=False`) in the selected period along with `billing_date` (exact `YYYY-MM-DD`, no due date), `already_paid` (net applied), `remaining_balance`, and `room_water_credit_balance`.
 
 ---
 
@@ -225,7 +225,7 @@ Returns all unpaid `WaterRecord` entries (`is_paid=False`) in the selected perio
 `GET /api/reports/unpaid-room-fee-bills/`  
 *(Alias: `GET /api/reports/all-unpaid-room-fee-payments/`)*
 
-Returns all unpaid room fee `Bill` entries (`is_paid=False`) in the selected period along with `already_paid` (net applied), `remaining_balance`, and `lease_rent_credit_balance`.
+Returns all unpaid room fee `Bill` entries (`is_paid=False`) in the selected period along with `room_payment_due_date` / `due_date` (derived from `lease.start_date`), `lease_start_date`, `lease_end_date`, `is_overdue`, `days_overdue`, `payment_status`, `already_paid` (net applied), `remaining_balance`, `deposit_refund_at_end_date`, and `lease_rent_credit_balance`. Late payments after the due date remain allowed.
 
 ---
 
@@ -246,7 +246,8 @@ Two endpoints expose `BillRecorrectionAuditLog` records created whenever electri
 - `GET /api/reports/room-data/` — List of all rooms (`room_number`, `room_type`, `note`, `electricity_credit_balance`, `water_credit_balance`).
 - `GET /api/reports/customer-details/` — All customers with their lease summaries and total room-fee payments.
 - `GET /api/reports/this-month-charges/` — Room fee `Bill` records in the period.
-- `GET /api/reports/room-repairs/` — `RoomRepair` logs in the period.
+- `GET /api/reports/room-repairs/` — Regular tenancy `RoomRepair` logs in the period.
+- `GET /api/reports/move-out-repairs/` — Separate move-out special room repair (`MoveOutRepair`) records in the period (`total_move_out_repair_cost`, `repairs_count`, `move_out_repairs`).
 - `GET /api/reports/electricity-payments/` — Electricity supplier payments summary + `room_breakdown` + `unpaid_electricity_records`.
 - `GET /api/reports/water-payments/` — Water supplier payments summary + `room_breakdown` + `unpaid_water_records`.
 - `GET /api/reports/profits/` — Accommodation revenue (room fee payments minus repair costs; electricity and water supplier payments are tracked separately under `electricity_payments_to_supplier_excluded` and `water_payments_to_supplier_excluded`).

@@ -48,15 +48,13 @@ export interface ElectricityBillReminder {
   room_number: string;
   customer_name?: string | null;
   billing_month: string;
+  billing_date?: string | null;
   electricity_cost?: string | number;
   total_cost?: string | number;
   already_paid?: string | number;
   remaining_balance?: string | number;
   outstanding_amount?: string | number;
-  due_date?: string | null;
   is_paid?: boolean;
-  is_overdue?: boolean;
-  days_overdue?: number;
 }
 
 export interface WaterBillReminder {
@@ -66,15 +64,13 @@ export interface WaterBillReminder {
   room_number: string;
   customer_name?: string | null;
   billing_month: string;
+  billing_date?: string | null;
   water_cost?: string | number;
   total_cost?: string | number;
   already_paid?: string | number;
   remaining_balance?: string | number;
   outstanding_amount?: string | number;
-  due_date?: string | null;
   is_paid?: boolean;
-  is_overdue?: boolean;
-  days_overdue?: number;
 }
 
 export interface MissingServiceReminder {
