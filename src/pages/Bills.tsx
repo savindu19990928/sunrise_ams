@@ -27,8 +27,8 @@ import { type Column, DataTable } from '../components/ui/DataTable';
 import { Field, Input, Select } from '../components/ui/Field';
 import { PageHeader } from '../components/ui/PageHeader';
 import { SearchInput } from '../components/ui/SearchInput';
-import { type BillPdfSources, buildBillBundle, downloadBillPdf } from '../utils/billPdf';
-import { formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from '../utils/format';
+import { type BillPdfSources, buildBillBundle, downloadBillPdf, downloadBillsPdf } from '../utils/billPdf';
+import { firstOfCurrentMonth, formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from '../utils/format';
 import {
   billElectricityRemaining,
   billOutstanding,
@@ -98,6 +98,28 @@ export function Bills() {
   const downloadOne = (bill: Bill) => {
     downloadBillPdf(buildBillBundle(bill, pdfSources));
     toast.success(`Bill #${bill.id} downloaded`);
+  };
+
+  const targetDownloadMonth = month || monthInputValue(firstOfCurrentMonth());
+  const downloadMonthBills = useMemo(
+    () =>
+      bills
+        .filter((bill) => monthInputValue(bill.billing_month) === targetDownloadMonth)
+        .sort((a, b) => (a.room_number ?? '').localeCompare(b.room_number ?? '', undefined, { numeric: true })),
+    [bills, targetDownloadMonth]
+  );
+
+  const handleDownloadAllForMonth = () => {
+    if (!downloadMonthBills.length) return;
+    downloadBillsPdf(
+      downloadMonthBills.map((bill) => buildBillBundle(bill, pdfSources)),
+      targetDownloadMonth
+    );
+    toast.success(
+      downloadMonthBills.length === 1
+        ? `Downloaded 1 bill for ${formatMonth(`${targetDownloadMonth}-01`)}`
+        : `Downloaded ${downloadMonthBills.length} bills for ${formatMonth(`${targetDownloadMonth}-01`)}`
+    );
   };
 
   const missingServiceRooms = (billingMonth: string) => {
@@ -241,6 +263,14 @@ export function Bills() {
               }}
             >
               Record rent payment
+            </Button>
+            <Button
+              variant="secondary"
+              icon={DownloadIcon}
+              onClick={handleDownloadAllForMonth}
+              disabled={!downloadMonthBills.length || loading}
+            >
+              Download all · {formatMonth(`${targetDownloadMonth}-01`)} ({downloadMonthBills.length})
             </Button>
             <Button variant="secondary" icon={DownloadIcon} onClick={() => setDownloadOpen(true)} disabled={!bills.length}>
               Download bills

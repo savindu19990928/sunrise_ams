@@ -160,6 +160,7 @@ export interface PdfField {
   label: string;
   value: string;
   note?: string;
+  preserveLabelCase?: boolean;
 }
 
 /** Small labelled facts laid out in columns — the "billed to / month / due" block. */
@@ -178,13 +179,23 @@ export function drawFieldGrid(doc: jsPDF, startY: number, fields: PdfField[], co
     doc.setFontSize(6.8);
     doc.setTextColor(...INK_SOFT);
     doc.setCharSpace(0.5);
-    doc.text(field.label.toUpperCase(), x, y);
+    doc.text(field.preserveLabelCase ? field.label : field.label.toUpperCase(), x, y);
     doc.setCharSpace(0);
 
+    const displayValue = field.value || '—';
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.8);
+    let valueFontSize = 9.8;
+    doc.setFontSize(valueFontSize);
+    if (doc.getTextWidth(displayValue) > available) {
+      valueFontSize = 8.4;
+      doc.setFontSize(valueFontSize);
+    }
+    if (doc.getTextWidth(displayValue) > available) {
+      valueFontSize = 7.6;
+      doc.setFontSize(valueFontSize);
+    }
     doc.setTextColor(...INK);
-    doc.text(fitText(doc, field.value || '—', available), x, y + 13);
+    doc.text(fitText(doc, displayValue, available), x, y + 13);
 
     if (field.note) {
       doc.setFontSize(7.6);
@@ -246,6 +257,61 @@ export function drawParagraph(doc: jsPDF, y: number, text: string, size = 7.8): 
   const lines = doc.splitTextToSize(text, contentWidth(doc)) as string[];
   doc.text(lines, MARGIN, y);
   return y + lines.length * (size + 2.6);
+}
+
+/** Bottom highlight box for supplier account numbers with exact label casing and full-width fit. */
+export function drawSupplierAccountsBox(
+  doc: jsPDF,
+  startY: number,
+  items: { label: string; value: string; }[]
+): number {
+  if (!items.length) return startY;
+  const theme = themeOf(doc);
+  const height = 38;
+  let y = startY;
+  if (y + height > pageHeight(doc) - 46) {
+    addPage(doc);
+    y = MARGIN;
+  }
+
+  const width = contentWidth(doc);
+  const colWidth = width / items.length;
+  doc.setFillColor(...theme.tint);
+  doc.setDrawColor(...theme.line);
+  doc.setLineWidth(0.7);
+  doc.roundedRect(MARGIN, y, width, height, 6, 6, 'FD');
+
+  items.forEach((item, index) => {
+    const x = MARGIN + index * colWidth;
+    if (index > 0) {
+      doc.setDrawColor(...theme.line);
+      doc.setLineWidth(0.6);
+      doc.line(x, y + 7, x, y + height - 7);
+    }
+
+    const available = colWidth - 24;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.4);
+    doc.setTextColor(...theme.accent);
+    doc.text(item.label, x + 12, y + 13);
+
+    const displayValue = item.value || '—';
+    doc.setFont('helvetica', 'bold');
+    let valueFontSize = 10.5;
+    doc.setFontSize(valueFontSize);
+    if (doc.getTextWidth(displayValue) > available) {
+      valueFontSize = 9.2;
+      doc.setFontSize(valueFontSize);
+    }
+    if (doc.getTextWidth(displayValue) > available) {
+      valueFontSize = 8.2;
+      doc.setFontSize(valueFontSize);
+    }
+    doc.setTextColor(...INK);
+    doc.text(fitText(doc, displayValue, available), x + 12, y + 28);
+  });
+
+  return y + height;
 }
 
 export interface PdfTableOptions {

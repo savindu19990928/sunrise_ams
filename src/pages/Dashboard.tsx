@@ -5,23 +5,28 @@ import {
   BanknoteIcon,
   BedDoubleIcon,
   ClipboardListIcon,
+  DownloadIcon,
   DropletIcon,
   ReceiptTextIcon,
   SparklesIcon,
   UserPlusIcon,
   ZapIcon
 } from 'lucide-react';
-import type { OverduePayment, Payment } from '../types';
+import { toast } from 'sonner';
+import type { ElectricityRecord, OverduePayment, Payment, WaterRecord } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { useBillingData } from '../hooks/useBillingData';
 import { useCollection, useResource } from '../hooks/useResource';
+import { CombinedUtilityBillForm } from '../components/dashboard/CombinedUtilityBillForm';
 import { ApiErrorState } from '../components/ui/ApiErrorState';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card, CardHeader } from '../components/ui/Card';
 import { type Column, DataTable } from '../components/ui/DataTable';
+import { Input } from '../components/ui/Field';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatCard } from '../components/ui/StatCard';
+import { type BillPdfSources, buildBillBundle, downloadBillsPdf } from '../utils/billPdf';
 import {
   firstOfCurrentMonth,
   formatCurrency,
@@ -44,10 +49,13 @@ const quickActions = [
 
 export function Dashboard() {
   const { user } = useAuth();
-  const { bills, leases, rooms, loading, error, reloadAll } = useBillingData();
+  const { bills, leases, rooms, leaseMap, customerMap, roomMap, loading, error, reloadAll } = useBillingData();
   const { data: overdue } = useResource<OverduePayment[]>('/api/payments/overdue/');
   const { data: payments } = useCollection<Payment>('/api/payments/');
+  const { data: electricityRecords, reload: reloadElectricity } = useCollection<ElectricityRecord>('/api/electricity/');
+  const { data: waterRecords, reload: reloadWater } = useCollection<WaterRecord>('/api/water/');
   const [monthKey] = useState(monthInputValue(firstOfCurrentMonth()));
+  const [downloadMonth, setDownloadMonth] = useState(monthInputValue(firstOfCurrentMonth()));
 
   const overdueRows = useMemo(() => (Array.isArray(overdue) ? overdue : []), [overdue]);
 
@@ -73,6 +81,32 @@ export function Dashboard() {
         .reduce((sum, lease) => sum + depositBalance(lease), 0)
     };
   }, [bills, leases, rooms, payments, overdueRows, monthKey]);
+
+  const pdfSources: BillPdfSources = useMemo(
+    () => ({ leaseMap, customerMap, roomMap, electricityRecords, waterRecords }),
+    [leaseMap, customerMap, roomMap, electricityRecords, waterRecords]
+  );
+
+  const downloadMonthBills = useMemo(
+    () =>
+      bills
+        .filter((bill) => downloadMonth && monthInputValue(bill.billing_month) === downloadMonth)
+        .sort((a, b) => (a.room_number ?? '').localeCompare(b.room_number ?? '', undefined, { numeric: true })),
+    [bills, downloadMonth]
+  );
+
+  const handleDownloadAllBills = () => {
+    if (!downloadMonthBills.length || !downloadMonth) return;
+    downloadBillsPdf(
+      downloadMonthBills.map((bill) => buildBillBundle(bill, pdfSources)),
+      downloadMonth
+    );
+    toast.success(
+      downloadMonthBills.length === 1
+        ? `Downloaded 1 bill for ${formatMonth(`${downloadMonth}-01`)}`
+        : `Downloaded ${downloadMonthBills.length} bills for ${formatMonth(`${downloadMonth}-01`)}`
+    );
+  };
 
   const recentBills = useMemo(
     () =>
@@ -129,6 +163,24 @@ export function Dashboard() {
       <PageHeader
         title={`Welcome back, ${user?.username ?? 'admin'}`}
         description={`Billing period ${formatMonth(firstOfCurrentMonth())} · ${stats.activeLeases} active leases across ${rooms.length} rooms.`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="month"
+              aria-label="Select month to download bills"
+              value={downloadMonth}
+              onChange={(event) => setDownloadMonth(event.target.value)}
+              className="h-9 w-40"
+            />
+            <Button
+              icon={DownloadIcon}
+              disabled={!downloadMonthBills.length || loading}
+              onClick={handleDownloadAllBills}
+            >
+              Download all rooms&apos; bills ({downloadMonthBills.length})
+            </Button>
+          </div>
+        }
       />
 
       {error ? (
@@ -221,6 +273,16 @@ export function Dashboard() {
               loading={loading}
             />
           </div>
+
+          <CombinedUtilityBillForm
+            rooms={rooms}
+            leases={leases}
+            onGenerated={() => {
+              reloadAll();
+              reloadElectricity();
+              reloadWater();
+            }}
+          />
 
           <div className="grid gap-4 xl:grid-cols-3">
             <Card className="xl:col-span-2">

@@ -17,8 +17,8 @@ import {
   createDocument,
   drawBrandHeader,
   drawFieldGrid,
-  drawParagraph,
   drawSectionTitle,
+  drawSupplierAccountsBox,
   drawTable,
   drawTotalBand,
   previewPdf,
@@ -27,6 +27,7 @@ import {
   slugify,
   stampFooters
 } from './pdf';
+import { getSupplierAccounts } from './supplierAccounts';
 
 /* ------------------------------------------------------------------ *
  * One consolidated bill per tenant: rent payable to the property
@@ -135,7 +136,7 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
   const depositDeduction = toNumber(bill.deposit_deduction);
   const remainingDeposit = toNumber(bill.remaining_deposit);
   const depositPaid = lease ? toNumber(lease.deposit_paid) : null;
-  const primaryContact = customer?.immediate_contacts?.[0];
+  const supplierAccounts = getSupplierAccounts();
   const current = history.find((row) => row.isCurrent);
   const electricityRate = current?.electricityRate ?? 0;
   const waterRate = current?.waterRate ?? 0;
@@ -152,34 +153,33 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
     referenceNote: `Issued ${formatDate(new Date().toISOString())}`
   });
 
-  y = drawFieldGrid(doc, y, [
-    {
-      label: 'Billed to',
-      value: tenantName(bundle),
-      note: customer?.nic_number ? `NIC ${customer.nic_number}` : undefined
-    },
-    { label: 'Room', value: roomNumber, note: room?.room_type || undefined },
-    { label: 'Billing month', value: monthLabel(monthInputValue(bill.billing_month)) },
-    { label: 'Payment due', value: formatDate(bill.due_date) },
-    { label: 'Contact', value: customer?.phone || '—', note: customer?.email || undefined },
-    { label: 'Status', value: titleCase(billStatus(bill)) },
-    { label: 'Lease started', value: lease ? formatDate(lease.start_date) : '—' },
-    {
-      label: 'Immediate contact',
-      value: primaryContact ? `${primaryContact.name} (${primaryContact.relation})` : '—',
-      note: primaryContact?.mobile_number || undefined
-    }
-  ]);
+  y = drawFieldGrid(
+    doc,
+    y,
+    [
+      {
+        label: 'Billed to',
+        value: tenantName(bundle),
+        note: customer?.nic_number ? `NIC ${customer.nic_number}` : undefined
+      },
+      { label: 'Room', value: roomNumber, note: room?.room_type || undefined },
+      { label: 'Billing month', value: monthLabel(monthInputValue(bill.billing_month)) },
+      { label: 'Payment due', value: formatDate(bill.due_date) },
+      { label: 'Status', value: titleCase(billStatus(bill)) },
+      { label: 'Lease started', value: lease ? formatDate(lease.start_date) : '—' }
+    ],
+    3
+  );
 
-  y += 10;
-  y = drawSectionTitle(doc, y, 'Rent for this month', 'Payable to Sunrise Apartments (Property Manager)');
+  y += 4;
+  y = drawSectionTitle(doc, y, 'Rent for this month', ' ');
   y = drawTable(doc, {
     startY: y + 4,
     head: ['Description', 'Amount'],
     body: [
-      [`Room rent — Room ${roomNumber}`, formatCurrency(bill.rent)],
+      [`Room rent`, formatCurrency(bill.rent)],
       depositDeduction > 0
-        ? ['Less: monthly deposit deduction', `- ${formatCurrency(depositDeduction)}`]
+        ? ['Monthly deposit deduction', `- ${formatCurrency(depositDeduction)}`]
         : ['Deposit deduction — stopped, minimum deposit reached', formatCurrency(0)]
     ],
     rightAlign: [1],
@@ -188,14 +188,13 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
 
   y = drawTotalBand(
     doc,
-    y + 12,
+    y + 10,
     'Rent payable this month',
-    formatCurrency(billRentDue(bill)),
-    depositDeduction > 0 ? 'Rent less deposit deduction' : 'Full rent'
+    formatCurrency(billRentDue(bill))
   );
 
   y = drawTable(doc, {
-    startY: y + 12,
+    startY: y + 10,
     head: ['Rent payment position', 'Amount'],
     body: [
       ['Rent paid so far', formatCurrency(bill.amount_paid)],
@@ -209,33 +208,31 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
 
   y = drawSectionTitle(
     doc,
-    y + 22,
+    y + 16,
     'Electricity & water for this month',
     'Paid separately and directly to each supplier — not included in rent payable'
   );
   y = drawTable(doc, {
     startY: y + 4,
-    head: ['Service', 'Pay directly to', 'Billed', 'Remaining'],
+    head: ['Utility', 'Billed', 'Remaining'],
     body: [
       [
         `Electricity${usageLabel(current?.electricityUnits, electricityRate)}`,
-        'Electricity supplier (CEB)',
         formatCurrency(bill.electricity),
         formatCurrency(billElectricityRemaining(bill))
       ],
       [
         `Water${usageLabel(current?.waterUnits, waterRate)}`,
-        'Water supplier (NWSDB)',
         formatCurrency(bill.water),
         formatCurrency(billWaterRemaining(bill))
       ]
     ],
     rightAlign: [2, 3],
-    columnWidths: { 1: 120, 2: 85, 3: 85 },
+    columnWidths: { 1: 125, 2: 85, 3: 85 },
     fontSize: 8.4
   });
 
-  y = drawSectionTitle(doc, y + 22, 'Deposit', 'Covers part of the rent each month until the minimum threshold');
+  y = drawSectionTitle(doc, y + 16, 'Deposit', ' ');
   y = drawTable(doc, {
     startY: y + 4,
     head: ['Deposit movement', 'Amount'],
@@ -250,7 +247,7 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
     fontSize: 8.6
   });
 
-  y = drawSectionTitle(doc, y + 22, 'Electricity & water history', 'Usage with average per day — this month and the previous two');
+  y = drawSectionTitle(doc, y + 16, 'Electricity & water history', ' ');
   y = drawTable(doc, {
     startY: y + 4,
     head: ['Month', 'Elec. units', 'Avg / day', 'Electricity', 'Water units', 'Avg / day', 'Water'],
@@ -270,15 +267,20 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
     fontSize: 7.8
   });
 
-  drawParagraph(
-    doc,
-    y + 20,
-    `Electricity and water are charged on this room\u2019s own meter units at this month\u2019s per-unit price (the building bill divided by all rooms\u2019 usage, unless adjusted for this room). Electricity bills are paid directly to CEB and water bills are paid directly to NWSDB; any advance credit applies strictly to that same service. ${
-      depositDeduction > 0
-        ? `${formatCurrency(depositDeduction)} of the rent is covered by the deposit this month; deductions stop once the deposit balance falls to the lease\u2019s minimum deposit threshold, after which the full rent is payable.`
-        : 'The deposit balance has reached the lease\u2019s minimum deposit threshold, so no deduction applies and the full rent is payable.'
-    } Any deposit remaining when the room is vacated is refunded after deducting repair costs.`
-  );
+  drawSupplierAccountsBox(doc, y + 14, [
+    { label: 'LECO AC No.', value: supplierAccounts.electricityAccount || '—' },
+    { label: 'NWSDB AC No.', value: supplierAccounts.waterAccount || '—' }
+  ]);
+
+  // drawParagraph(
+  //   doc,
+  //   y + 20,
+  //   `Electricity and water are charged on this room\u2019s own meter units at this month\u2019s per-unit price (the building bill divided by all rooms\u2019 usage, unless adjusted for this room). Electricity bills are paid directly to CEB and water bills are paid directly to NWSDB; any advance credit applies strictly to that same service. ${
+  //     depositDeduction > 0
+  //       ? `${formatCurrency(depositDeduction)} of the rent is covered by the deposit this month; deductions stop once the deposit balance falls to the lease\u2019s minimum deposit threshold, after which the full rent is payable.`
+  //       : 'The deposit balance has reached the lease\u2019s minimum deposit threshold, so no deduction applies and the full rent is payable.'
+  //   } Any deposit remaining when the room is vacated is refunded after deducting repair costs.`
+  // );
 }
 
 function billFilename(bundle: BillPdfBundle): string {

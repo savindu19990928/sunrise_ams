@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { type FormEvent, useState } from 'react';
 import {
   CheckCircle2Icon,
   DownloadCloudIcon,
@@ -8,18 +8,26 @@ import {
   MoonIcon,
   RefreshCwIcon,
   RotateCcwIcon,
+  SaveIcon,
   SparklesIcon,
   SunIcon,
   TagIcon,
   XCircleIcon,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { twMerge } from 'tailwind-merge';
 import { useUpdater } from '../contexts/UpdateContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Badge, BadgeTone } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card, CardBody, CardHeader } from '../components/ui/Card';
+import { Field, Input } from '../components/ui/Field';
 import { PageHeader } from '../components/ui/PageHeader';
+import {
+  getSupplierAccounts,
+  saveSupplierAccounts,
+  SUPPLIER_ACCOUNT_MAX_LENGTH,
+} from '../utils/supplierAccounts';
 
 export function Settings() {
   const {
@@ -34,6 +42,23 @@ export function Settings() {
   } = useUpdater();
 
   const { theme, systemIsDark, setTheme } = useTheme();
+  const [initialAccounts] = useState(() => getSupplierAccounts());
+  const [electricityAccount, setElectricityAccount] = useState(initialAccounts.electricityAccount);
+  const [waterAccount, setWaterAccount] = useState(initialAccounts.waterAccount);
+  const [savedAccounts, setSavedAccounts] = useState(initialAccounts);
+
+  const accountsDirty =
+    electricityAccount.trim() !== savedAccounts.electricityAccount ||
+    waterAccount.trim() !== savedAccounts.waterAccount;
+
+  const handleSaveSupplierAccounts = (e: FormEvent) => {
+    e.preventDefault();
+    const saved = saveSupplierAccounts({ electricityAccount, waterAccount });
+    setElectricityAccount(saved.electricityAccount);
+    setWaterAccount(saved.waterAccount);
+    setSavedAccounts(saved);
+    toast.success('Supplier account numbers saved.');
+  };
 
   const handleOpenGitHub = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -269,6 +294,53 @@ export function Settings() {
               </label>
             </div>
           </div>
+        </CardBody>
+      </Card>
+
+      {/* Supplier Account Numbers Section */}
+      <Card>
+        <CardHeader
+          title="Supplier Account Numbers"
+          description="Electricity and water supplier account numbers shown on tenant bills. Saved in local storage (max 20 characters each)."
+        />
+        <CardBody>
+          <form onSubmit={handleSaveSupplierAccounts} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field
+                label="LECO AC No."
+                htmlFor="leco_ac_no"
+                hint={`${electricityAccount.length}/${SUPPLIER_ACCOUNT_MAX_LENGTH} characters · Shown on electricity bills`}
+              >
+                <Input
+                  id="leco_ac_no"
+                  type="text"
+                  maxLength={SUPPLIER_ACCOUNT_MAX_LENGTH}
+                  value={electricityAccount}
+                  onChange={(e) => setElectricityAccount(e.target.value.slice(0, SUPPLIER_ACCOUNT_MAX_LENGTH))}
+                  placeholder="Enter LECO account number"
+                />
+              </Field>
+              <Field
+                label="NWSDB AC No."
+                htmlFor="nwsdb_ac_no"
+                hint={`${waterAccount.length}/${SUPPLIER_ACCOUNT_MAX_LENGTH} characters · Shown on water bills`}
+              >
+                <Input
+                  id="nwsdb_ac_no"
+                  type="text"
+                  maxLength={SUPPLIER_ACCOUNT_MAX_LENGTH}
+                  value={waterAccount}
+                  onChange={(e) => setWaterAccount(e.target.value.slice(0, SUPPLIER_ACCOUNT_MAX_LENGTH))}
+                  placeholder="Enter NWSDB account number"
+                />
+              </Field>
+            </div>
+            <div className="flex items-center justify-end gap-3">
+              <Button type="submit" icon={SaveIcon} disabled={!accountsDirty}>
+                Save account numbers
+              </Button>
+            </div>
+          </form>
         </CardBody>
       </Card>
 

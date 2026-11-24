@@ -18,6 +18,7 @@ import {
   billWaterRemaining
 } from '../../utils/lookup';
 import { BRAND_NAME, BRAND_TAGLINE } from '../../utils/pdf';
+import { getSupplierAccounts } from '../../utils/supplierAccounts';
 import { formatPerDay, formatUnits } from '../../utils/utilityUsage';
 import { Badge, type BadgeTone } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -71,6 +72,7 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
   const current = bundle?.history.find((row) => row.isCurrent);
   const elecRemaining = bill ? billElectricityRemaining(bill) : 0;
   const waterRemaining = bill ? billWaterRemaining(bill) : 0;
+  const supplierAccounts = getSupplierAccounts();
 
   const handleDownload = () => {
     if (!bundle) return;
@@ -176,7 +178,7 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
             <div>
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="text-[13px] font-medium text-ink">Electricity this month</h3>
-                <p className="text-[12px] text-ink-muted">Paid directly to electricity supplier (CEB)</p>
+                <p className="text-[12px] text-ink-muted">Paid directly to LECO</p>
               </div>
               <dl className="mt-1 divide-y divide-bill-line rounded-xl border border-bill-line bg-surface/70 px-4">
                 <Line
@@ -186,10 +188,10 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
                 {bill.electricity_paid !== undefined &&
                   bill.electricity_paid !== null &&
                   toNumber(bill.electricity_paid) > 0 && (
-                    <Line label="Paid to CEB" value={formatCurrency(bill.electricity_paid)} />
+                    <Line label="Paid to LECO" value={formatCurrency(bill.electricity_paid)} />
                   )}
                 <div className="flex items-baseline justify-between gap-4 py-2.5">
-                  <dt className="text-sm font-medium text-ink">Payable to CEB</dt>
+                  <dt className="text-sm font-medium text-ink">Payable to LECO</dt>
                   <dd className={`text-sm font-semibold ${elecRemaining > 0 ? 'text-ink' : 'text-success-600'}`}>
                     {formatCurrency(elecRemaining)}
                   </dd>
@@ -265,11 +267,26 @@ export function BillDetailModal({ bill, sources, onClose, onRecordPayment }: Bil
               </div>
             )}
 
-            <p className="text-[12px] leading-relaxed text-ink-muted">
+            {/* <p className="text-[12px] leading-relaxed text-ink-muted">
               {deduction > 0
                 ? `${formatCurrency(deduction)} of this month's rent is covered by the deposit. Deductions stop once the deposit balance falls to the lease's minimum deposit threshold — from then on the full rent is payable.`
                 : "The deposit balance has reached the lease's minimum deposit threshold, so no deduction applies and the full rent is payable."}
-            </p>
+            </p> */}
+
+            <div className="grid gap-3 rounded-xl border border-bill-line bg-bill-tint px-4 py-3 sm:grid-cols-2">
+              <div>
+                <p className="text-[11px] font-semibold text-bill-accent">LECO AC No.</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-ink">
+                  {supplierAccounts.electricityAccount || '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-bill-accent">NWSDB AC No.</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-ink">
+                  {supplierAccounts.waterAccount || '—'}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
