@@ -3,7 +3,6 @@ import type { Bill, Customer, ElectricityRecord, ID, Lease, Room, WaterRecord } 
 import { formatCurrency, formatDate, formatMonth, monthInputValue, titleCase, toNumber } from './format';
 import {
   billElectricityRemaining,
-  billOutstanding,
   billRentDue,
   billStatus,
   billWaterRemaining,
@@ -131,7 +130,6 @@ function monthLabel(monthKey: string): string {
 
 function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
   const { bill, lease, customer, room, history } = bundle;
-  const outstanding = billOutstanding(bill);
   const roomNumber = room?.room_number ?? bill.room_number ?? '—';
   const depositDeduction = toNumber(bill.deposit_deduction);
   const remainingDeposit = toNumber(bill.remaining_deposit);
@@ -192,19 +190,6 @@ function renderBill(doc: jsPDF, bundle: BillPdfBundle): void {
     'Rent payable this month',
     formatCurrency(billRentDue(bill))
   );
-
-  y = drawTable(doc, {
-    startY: y + 10,
-    head: ['Rent payment position', 'Amount'],
-    body: [
-      ['Rent paid so far', formatCurrency(bill.amount_paid)],
-      [outstanding > 0 ? 'Rent still outstanding' : 'Rent settled in full', formatCurrency(outstanding)]
-    ],
-    rightAlign: [1],
-    columnWidths: { 1: 130 },
-    emphasiseLastRow: true,
-    fontSize: 8.6
-  });
 
   y = drawSectionTitle(
     doc,
